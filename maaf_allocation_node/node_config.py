@@ -1,5 +1,7 @@
 ALLOCATION_METHOD = "CBAA w. intercession"
 
+DEBUG = False
+
 # ----------------- SIMULATION MODE -----------------
 # >>>>>>>>>> RUN MODES DEFINITION
 SIM = 0
@@ -8,8 +10,8 @@ OPERATIONAL = 1
 
 RUN_MODE = OPERATIONAL
 
-DEBUG = False
-
+# ----------------- NODE CONFIGURATION -----------------
+FLEET_MSG_UPDATE_TIMER = 0.1
 
 
 

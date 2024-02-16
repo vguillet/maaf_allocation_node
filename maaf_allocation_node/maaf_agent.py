@@ -21,6 +21,7 @@ CAF:
 from abc import abstractmethod
 from typing import List, Optional
 from datetime import datetime, timedelta
+from random import randint
 
 # ROS2 Imports
 import rclpy
@@ -39,51 +40,72 @@ from maaf_msgs.msg import TeamCommStamped
 ##################################################################################################################
 
 
+def bid_evaluation(self, task_id):
+    # TODO: Implement bid evaluation, for now random bid for self only
+    self.local_bids_c.loc[task_id, self.id] = randint(0, 10000)
+
+
 class maaf_agent(Node):
-    def __init__(
-            self,
-            agent_id: str,
-            name: str,
-            agent_class,
-            hierarchy_level: int = 0,
-            affiliations: list = [],
-            specs: dict = None,
-            skillset: list = None,
-            bid_evaluation_function=None,
-            fleet: Fleet = Fleet(),
-            task_log: Task_log = Task_log()
-    ):
+    def __init__(self):
         """
         maaf agent class
-
-        :param agent_id: agent id (str)
-        :param name: agent name (str)
-        :param agent_class: agent class (str)
-        :param hierarchy_level: agent hierarchy level (int, larger is higher)
-        :param affiliations: agent affiliations (list of str)
-        :param specs: agent specs (dict)
-        :param skillset: agent skillset (list of str)
-        :param bid_evaluation_function: function to evaluate bids (function)
         """
 
+        # ----------------------------------- Node Configuration
+        Node.__init__(
+            self,
+            # node_name=f"{self.id}_CBAAwI_allocation_node",
+            node_name=f"CBAAwI_allocation_node",
+        )
+
         # ---- Agent properties
-        self.id = agent_id
-        self.name = name
-        self.agent_class = agent_class
-        self.hierarchy_level = hierarchy_level
-        self.affiliations = affiliations
+        # > ID
+        self.declare_parameter("id", None)
+        self.id = self.get_parameter("id").get_parameter_value().string_value
 
-        self.specs = specs
-        self.skillset = skillset
+        # > Name
+        self.declare_parameter("name", None)
+        self.name = self.get_parameter("name").get_parameter_value().string_value
 
-        self.bid_evaluation_function = bid_evaluation_function
+        # > Class
+        self.declare_parameter("class", None)
+        self.agent_class = self.get_parameter("class").get_parameter_value().string_value
+
+        # > Hierarchy level
+        self.declare_parameter("hierarchy_level", None)
+        self.hierarchy_level = self.get_parameter("hierarchy_level").get_parameter_value().integer_value
+
+        # > Affiliations
+        self.declare_parameter("affiliations", None)
+        self.affiliations = self.get_parameter("affiliations").get_parameter_value().string_array_value
+
+        # > Specs
+        self.declare_parameter("specs", None)
+        self.specs = self.get_parameter("specs").get_parameter_value().dict_value
+
+        # > Skillset
+        self.declare_parameter("skillset", None)
+        self.skillset = self.get_parameter("skillset").get_parameter_value().dict_value
+
+        # > Bid evaluation function
+        # TODO: Implement bid evaluation function selection logic
+        self.bid_evaluation_function = bid_evaluation
 
         # ---- Fleet data
         """
         Fleet dict of size N_a
         Agents ids are obtained using the self.id_card property
         """
-        self.fleet = fleet
+        # -> Create fleet object
+        self.fleet = Fleet()
+
+        # -> Fill with initial data
+        # > Retrieve initial fleet data from parameters
+        self.declare_parameter("fleet", None)
+        fleet_data = self.get_parameter("fleet").get_parameter_value().dict_value
+
+        # > Add initial fleet data to the fleet object
+        self.fleet.from_list(item_dicts_list=fleet_data)
 
         # -> Check if self is in the fleet, if not, add self to the fleet
         if self.id not in self.fleet.ids:
@@ -105,16 +127,16 @@ class maaf_agent(Node):
         Tasks dict of size N_t
         Tasks are created using the self.create_task method
         """
-        self.task_log = task_log
+        # -> Create task log object
+        self.task_log = Task_log()
 
-        # ----------------------------------- Node Configuration
-        Node.__init__(
-            self,
-            node_name=f"maaf_agent_{self.id}"
-        )
+        # -> Fill with initial data
+        # > Retrieve initial task data from parameters
+        self.declare_parameter("task_log", None)
+        task_log_data = self.get_parameter("task_log").get_parameter_value().dict_value
 
-        # ---- Node behavior
-        self.verbose = 0
+        # > Add initial task data to the task log object
+        self.task_log.from_list(item_dicts_list=task_log_data)
 
         # ---- Node connections
         self.setup_node_pubs_subs()
@@ -206,7 +228,7 @@ class maaf_agent(Node):
         # ----------------------------------- Timers
         # ---- Fleet msg update timer
         self.fleet_msg_update_timer = self.create_timer(
-            timer_period_sec=0.1,
+            timer_period_sec=FLEET_MSG_UPDATE_TIMER,
             callback=self.fleet_msg_update_timer_callback
         )
 

@@ -49,24 +49,11 @@ class maaf_allocation_node(maaf_agent):
          ):
 
         # ---- Init parent class
-        maaf_agent.__init__(
-            self,
-            agent_id=agent_id,                                  # TODO: Create ROS parameter
-            name=name,                                          # TODO: Create ROS parameter
-            agent_class=agent_class,                            # TODO: Create ROS parameter
-            hierarchy_level=hierarchy_level,                    # TODO: Create ROS parameter
-            affiliations=affiliations,                          # TODO: Create ROS parameter
-            specs=specs,                                        # TODO: Create ROS parameter
-            skillset=skillset,                                  # TODO: Create ROS parameter
-            bid_evaluation_function=bid_evaluation_function,    # TODO: Create ROS parameter
-            fleet=fleet,                                        # TODO: Create ROS parameter
-            task_log=task_log                                   # TODO: Create ROS parameter
-
-        )
+        maaf_agent.__init__(self)
 
         # -----------------------------------  Agent state
         # ---- Agent state
-        self.pose = None                    # TODO: Create ROS parameter
+        self.pose = None
 
         # ---- Allocation state
         """
@@ -276,15 +263,6 @@ class maaf_allocation_node(maaf_agent):
             "w": w
         }
 
-    def fleet_msg_update_timer_callback(self) -> None:
-        """
-        Callback for the fleet message update timer
-        """
-        # -> Publish allocation state to the fleet
-        self.publish_allocation_state_msg()
-
-        print("Allocation state published")
-
     def task_msg_subscriber_callback(self, task_msg) -> None:
         """
         Callback for task messages, create new task. add to local tasks and update local states, and select new task
@@ -314,6 +292,15 @@ class maaf_allocation_node(maaf_agent):
         # -> Select task
         self.select_task()
 
+    def fleet_msg_update_timer_callback(self) -> None:
+        """
+        Callback for the fleet message update timer
+        """
+        # -> Publish allocation state to the fleet
+        self.publish_allocation_state_msg()
+
+        self.get_logger().info(f">>>>>>>>>>>>>>>>>>>> Allocation state published")
+
     def team_msg_subscriber_callback(self, team_msg) -> None:
         """
         Callback for team messages, consensus phase of the CBAA algorithm
@@ -325,7 +312,9 @@ class maaf_allocation_node(maaf_agent):
         # if team_msg.source == self.id:
         #     return
 
-        # ->> Deserialise allocation state
+        self.get_logger().info(f"<<<<<<<<<<<<<<<<<<<< Allocation state received from {team_msg.source}")
+
+        # -> Deserialise allocation state
         allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
@@ -362,7 +351,9 @@ class maaf_allocation_node(maaf_agent):
         :param task_list: Tasks dict
         :param fleet: Fleet dict
         """
-
+        
+        self.get_logger().info(f"> Updating situation awareness")
+        
         def add_agent(agent_dict: dict) -> None:
             """
             Add new agent to local fleet and extend local states with new columns for new agent
@@ -511,7 +502,9 @@ class maaf_allocation_node(maaf_agent):
         :param received_current_allocations_a: Task allocations matrix a received from the fleet
         :param received_current_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
-
+        
+        self.get_logger().info(f"> Updating shared states")
+        
         # -> For each task ...
         for task_id in self.task_log.ids_pending:
             # -> for each agent ...
@@ -553,8 +546,13 @@ class maaf_allocation_node(maaf_agent):
     ):
         """
         Update current task based on received winning bids and updated allocation intercession from the fleet
+        
+        :param received_winning_bids_y: Winning bids list y received from the fleet
+        :param task_id: task id
         """
-
+        
+        self.get_logger().info(f"> Updating task {task_id}")
+        
         # -> Create set of agents with imposed allocations
         agents_with_imposed_allocations = set(
             self.current_allocations_a.loc[task_id][self.current_allocations_a.loc[task_id] == 1].index)
@@ -714,10 +712,6 @@ class maaf_allocation_node(maaf_agent):
             # -> Update previous state hash
             self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
 
-    def bid_evaluation(self, task_id):
-        # TODO: Implement bid evaluation, for now random bid for self only
-        self.local_bids_c.loc[task_id, self.id] = randint(0, 10000)
-
     # ---------------- Tools
     # >>>> CBAA
     @staticmethod
@@ -823,7 +817,8 @@ def main(args=None):
     rclpy.init(args=args)
 
     path_sequence = maaf_allocation_node(
-        agent_id="agent_1",
+        agent_id=f"Turtle_1",
+        # agent_id=f"agent_{randint(0, 10000)}",
         name="agent_1",
         agent_class="robot",
         hierarchy_level=1,
