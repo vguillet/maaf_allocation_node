@@ -59,35 +59,19 @@ class maaf_agent(Node):
         )
 
         # ---- Agent properties
-        # > ID
-        self.declare_parameter("id", None)
-        self.id = self.get_parameter("id").get_parameter_value().string_value
+        # > declare all parameters at once
+        self.declare_parameters(namespace="", parameters=[("id", ""), ("name", "")])
 
-        # > Name
-        self.declare_parameter("name", None)
+        self.id = self.get_parameter("id").get_parameter_value().string_value
         self.name = self.get_parameter("name").get_parameter_value().string_value
 
-        # > Class
-        self.declare_parameter("class", None)
-        self.agent_class = self.get_parameter("class").get_parameter_value().string_value
+        # TODO: Implement local loading of configs
+        self.agent_class = "Base"
+        self.hierarchy_level = 0
+        self.affiliations = []
+        self.specs = {}
+        self.skillset = []
 
-        # > Hierarchy level
-        self.declare_parameter("hierarchy_level", None)
-        self.hierarchy_level = self.get_parameter("hierarchy_level").get_parameter_value().integer_value
-
-        # > Affiliations
-        self.declare_parameter("affiliations", None)
-        self.affiliations = self.get_parameter("affiliations").get_parameter_value().string_array_value
-
-        # > Specs
-        self.declare_parameter("specs", None)
-        self.specs = self.get_parameter("specs").get_parameter_value().dict_value
-
-        # > Skillset
-        self.declare_parameter("skillset", None)
-        self.skillset = self.get_parameter("skillset").get_parameter_value().dict_value
-
-        # > Bid evaluation function
         # TODO: Implement bid evaluation function selection logic
         self.bid_evaluation_function = bid_evaluation
 
@@ -101,8 +85,7 @@ class maaf_agent(Node):
 
         # -> Fill with initial data
         # > Retrieve initial fleet data from parameters
-        self.declare_parameter("fleet", None)
-        fleet_data = self.get_parameter("fleet").get_parameter_value().dict_value
+        fleet_data = []
 
         # > Add initial fleet data to the fleet object
         self.fleet.from_list(item_dicts_list=fleet_data)
@@ -132,8 +115,7 @@ class maaf_agent(Node):
 
         # -> Fill with initial data
         # > Retrieve initial task data from parameters
-        self.declare_parameter("task_log", None)
-        task_log_data = self.get_parameter("task_log").get_parameter_value().dict_value
+        task_log_data = []
 
         # > Add initial task data to the task log object
         self.task_log.from_list(item_dicts_list=task_log_data)
