@@ -6,7 +6,7 @@ SIM = 0
 OPERATIONAL = 1
 # >>>>>>>>>>
 
-RUN_MODE = SIM
+RUN_MODE = OPERATIONAL
 
 DEBUG = False
 

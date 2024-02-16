@@ -8,6 +8,8 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 from random import randint
 from json import dumps, loads
 from typing import List, Optional
+from copy import deepcopy
+from pprint import pprint
 
 from tabulate import tabulate
 import pandas as pd
@@ -64,7 +66,6 @@ class maaf_allocation_node(maaf_agent):
 
         # -----------------------------------  Agent state
         # ---- Agent state
-        self.__prev_allocation_state_hash_dict = None
         self.pose = None                    # TODO: Create ROS parameter
 
         # ---- Allocation state
@@ -188,6 +189,10 @@ class maaf_allocation_node(maaf_agent):
             "current_allocations_priority_alpha": self.current_allocations_priority_alpha
         }
 
+        # -> Initialise previous state hash
+        self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
+
+        # -----------------------------------  Confirm initialisation
         self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
 
     # ============================================================== PROPERTIES
@@ -214,29 +219,40 @@ class maaf_allocation_node(maaf_agent):
         return self.state_awareness_dict | self.shared_allocation_state_dict
 
     @property
-    def allocation_state_change(self) -> bool:
+    def shared_allocation_state_change(self) -> bool:
         """
-        Check if the state has changed
+        Check if the shared allocation state has changed
 
         :return: bool
         """
-        return self.__allocation_state_hash_dict != self.__prev_allocation_state_hash_dict
+        # -> Compare hash of current state with hash of previous state
+        for key, value in self.__state_hash_dict.items():
+            # -> If any value has changed, return True
+            if value != self.__prev_state_hash_dict[key]:
+                return True
+
+        # -> If no value has changed, return False
+        return False
 
     @property
-    def __allocation_state_hash_dict(self) -> dict:
+    def __state_hash_dict(self) -> dict:
         """
         Hash of the agent state
 
         :return: dict
         """
-        return {
-            "local_bids_c": hash(self.local_bids_c),
-            "local_allocations_d": hash(self.local_allocations_d),
-            "current_bids_b": hash(self.current_bids_b),
-            "current_bids_priority_beta": hash(self.current_bids_priority_beta),
-            "current_allocations_a": hash(self.current_allocations_a),
-            "current_allocations_priority_alpha": hash(self.current_allocations_priority_alpha)
-        }
+        # -> Convert to series and dataframe to immutable hashable objects
+        immutable_state = {}
+
+        for key, value in self.state.items():
+            if isinstance(value, pd.Series):
+                immutable_state[key] = hash(str(value.to_string()))
+            elif isinstance(value, pd.DataFrame):
+                immutable_state[key] = hash(str(value.to_string()))
+            else:
+                immutable_state[key] = hash(str(value))
+
+        return immutable_state
 
     # ============================================================== METHODS
     # ---------------- Callbacks
@@ -293,7 +309,7 @@ class maaf_allocation_node(maaf_agent):
         # task = self.__task_factory(task_id=task_data["id"], task_type=task_data["type"], task_instructions=task_data["instructions"])
 
         # -> Add task to local tasks and update local states
-        self.__update_situation_awareness(tasks=task_list, fleet=None)
+        self.__update_situation_awareness(task_list=task_list, fleet=None)
 
         # -> Select task
         self.select_task()
@@ -305,41 +321,32 @@ class maaf_allocation_node(maaf_agent):
         :param team_msg: TeamComm message
         """
         # ---- Unpack msg
-        # > Metadata
-        msg_source = team_msg.source
+        # -> Ignore own messages    TODO: Re-enable when done
+        # if team_msg.source == self.id:
+        #     return
 
-        # -> Ignore own messages
-        if msg_source == self.id:
-            return
-
-        # > Fleet and problem data
-        msg_source_id_card = team_msg.data["id_card"]
-        msg_tasks = team_msg.data["tasks"]
-        msg_fleet = team_msg.data["fleet"]
+        # ->> Deserialise allocation state
+        allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
-        self.__update_situation_awareness(tasks=msg_tasks, fleet=msg_fleet)
-
-        # > Allocation shared states
-        received_winning_bids_y = team_msg.data["winning_bids_y"]
-        received_current_bids_b = team_msg.data["current_bids_b"]
-        received_current_bids_priority_beta = team_msg.data["current_bids_priority_beta"]
-        received_current_allocations_a = team_msg.data["current_allocations_a"]
-        received_current_allocations_priority_alpha = team_msg.data["current_allocations_priority_alpha"]
+        self.__update_situation_awareness(
+            task_list=allocation_state["tasks"],
+            fleet=allocation_state["fleet"]
+        )
 
         # -> Update shared states
         self.__update_shared_states(
-            received_current_bids_b=received_current_bids_b,
-            received_current_bids_priority_beta=received_current_bids_priority_beta,
-            received_current_allocations_a=received_current_allocations_a,
-            received_current_allocations_priority_alpha=received_current_allocations_priority_alpha
+            received_current_bids_b=allocation_state["current_bids_b"],
+            received_current_bids_priority_beta=allocation_state["current_bids_priority_beta"],
+            received_current_allocations_a=allocation_state["current_allocations_a"],
+            received_current_allocations_priority_alpha=allocation_state["current_allocations_priority_alpha"]
         )
 
         # -> Update the task in the task list x the agent is assigned to
         for task_id in self.task_log.ids_pending:
             if self.task_list_x[task_id] == 1:
                 self.__update_task(
-                    received_winning_bids_y=received_winning_bids_y,
+                    received_winning_bids_y=allocation_state["winning_bids_y"],
                     task_id=task_id
                 )
 
@@ -588,7 +595,7 @@ class maaf_allocation_node(maaf_agent):
         msg.target = "all"
 
         msg.meta_action = "allocation update"
-        msg.memo = dumps(self.allocation_state)
+        msg.memo = self.serialise(state=self.allocation_state)
 
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
@@ -626,7 +633,7 @@ class maaf_allocation_node(maaf_agent):
         """
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
-        if self.allocation_state_change:
+        if self.shared_allocation_state_change:
             # > For each task ...
             for task_id in self.task_log.ids_pending:
                 # > For each agent ...
@@ -700,12 +707,12 @@ class maaf_allocation_node(maaf_agent):
                 self.publish_goal(task_id=selected_task)
 
         # -> If state has changed, update local states (only publish when necessary)
-        if self.allocation_state_change:
+        if self.shared_allocation_state_change:
             # -> Publish allocation state to the fleet
             self.publish_allocation_state_msg()
 
             # -> Update previous state hash
-            self.__prev_allocation_state_hash_dict = self.__allocation_state_hash_dict
+            self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
 
     def bid_evaluation(self, task_id):
         # TODO: Implement bid evaluation, for now random bid for self only
@@ -804,8 +811,8 @@ class maaf_allocation_node(maaf_agent):
                 # -> Convert to pandas dataframe or series
                 deserialised_state[key] = pd.DataFrame(value) if isinstance(value, dict) else pd.Series(value)
 
+        return deserialised_state
 
-        return loads(state)
 
 def random_bid_evaluation(*args, **kwargs):
     return randint(0, 10000)

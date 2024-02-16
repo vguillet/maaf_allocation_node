@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'maaf_allocation_node_old'
+package_name = 'maaf_allocation_node'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'maaf_allocation_node_old = maaf_allocation_node_old.maaf_allocation_node_old:main'
+            'maaf_allocation_node = maaf_allocation_node.maaf_allocation_node:main'
         ],
     },
 )
