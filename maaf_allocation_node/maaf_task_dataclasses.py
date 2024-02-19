@@ -13,7 +13,7 @@ class Task:
     Dataclass to represent a task in the maaf allocation framework.
     """
     # > Metadata
-    id: str or int
+    id: str
     type: str
     creator: str
     affiliations: List[str]

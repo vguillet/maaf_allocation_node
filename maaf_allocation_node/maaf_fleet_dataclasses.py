@@ -9,7 +9,7 @@ DEBUG = True
 
 @dataclass
 class Agent:
-    id: str or int                          # ID of the agent
+    id: str                                 # ID of the agent
     name: str                               # Name of the agent
     agent_class: str                        # Class of the agent
     hierarchy_level: int                    # Hierarchy level of the agent

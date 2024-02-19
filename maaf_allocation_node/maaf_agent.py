@@ -254,8 +254,8 @@ class maaf_agent(Node):
         return timestamp_from_ros_time(time_obj)
 
     @property
-    def id_card(self) -> dict:
-        return self.fleet[self.id].to_dict()
+    def agent(self):
+        return self.fleet[self.id]
 
     # ---------------- Situation state
     @property
@@ -351,7 +351,7 @@ class maaf_agent(Node):
         pass
 
     # ---------------- Tools
-    def check_rebroadcast(self, msg, publisher):
+    def rebroadcast(self, msg, publisher):
         """
         Conditional rebroadcast of a message based on the trace
         The trace ensures every msg is only broadcast once per robot
