@@ -2,25 +2,24 @@ from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
 from .maaf_dataclass_cores import maaf_list_dataclass
+from .maaf_state_dataclasses import Agent_state
 
 DEBUG = True
 
 
 @dataclass
 class Agent:
-    id: str or int
-    name: str
-    agent_class: str
-    hierarchy_level: int
-    affiliations: List[str]
-    specs: dict
-    skillset: List[str]
-    status: str
-    state: str = None
-    last_contact_timestamp: datetime = None
+    id: str or int                          # ID of the agent
+    name: str                               # Name of the agent
+    agent_class: str                        # Class of the agent
+    hierarchy_level: int                    # Hierarchy level of the agent
+    affiliations: List[str]                 # Affiliations of the agent
+    specs: dict                             # Specifications of the agent
+    skillset: List[str]                     # Skillset of the agent
+    state: Agent_state                      # State of the agent, state object
 
     def __repr__(self) -> str:
-        return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.status}"
+        return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.state.status}"
 
     def __str__(self) -> str:
         return self.__repr__()
@@ -39,10 +38,13 @@ class Agent:
         :return: A dictionary with field names as keys and current values.
         """
         # -> Get the fields of the Agent class
-        agent_fields = fields(Agent)
+        agent_fields = fields(self)
 
         # -> Create a dictionary with field names as keys and their current values
         fields_dict = {f.name: getattr(self, f.name) for f in agent_fields}
+
+        # -> Convert state to dict
+        fields_dict["state"] = self.state.to_dict()
 
         return fields_dict
 
@@ -69,6 +71,9 @@ class Agent:
         # -> Extract values from the dictionary for the fields present in the class
         field_values = {field.name: agent_dict[field.name] for field in agent_fields}
 
+        # -> Convert state from dict
+        field_values["state"] = Agent_state.from_dict(agent_dict["state"])
+
         # -> Create and return an Agent object
         return cls(**field_values)
 
@@ -86,14 +91,14 @@ class Fleet(maaf_list_dataclass):
         """
         Get the list of IDs of the active agents in the fleet
         """
-        return [agent.id for agent in self.items if agent.status == "active"]
+        return [agent.id for agent in self.items if agent.state.status == "active"]
 
     @property
     def ids_inactive(self) -> List[str or int]:
         """
         Get the list of IDs of the inactive agents in the fleet
         """
-        return [agent.id for agent in self.items if agent.status == "inactive"]
+        return [agent.id for agent in self.items if agent.state.status == "inactive"]
 
     # ------------------------------ Agents
     @property
@@ -101,14 +106,14 @@ class Fleet(maaf_list_dataclass):
         """
         Get the list of active agents in the fleet
         """
-        return [agent for agent in self.items if agent.status == "active"]
+        return [agent for agent in self.items if agent.state.status == "active"]
 
     @property
     def agents_inactive(self) -> List[Agent]:
         """
         Get the list of inactive agents in the fleet
         """
-        return [agent for agent in self.items if agent.status == "inactive"]
+        return [agent for agent in self.items if agent.state.status == "inactive"]
 
     # ============================================================== Get
     def query(self,
@@ -137,47 +142,26 @@ class Fleet(maaf_list_dataclass):
         if affiliation:
             filtered_agents = [agent for agent in filtered_agents if affiliation in agent.affiliations]
         if status:
-            filtered_agents = [agent for agent in filtered_agents if agent.status == status]
+            filtered_agents = [agent for agent in filtered_agents if agent.state.status == status]
 
         return filtered_agents
 
     # ============================================================== Set
-    def flag_agent_active(self, agent: str or int or item_class or List[int or str or item_class]) -> None:
+
+    def set_agent_state(self, agent: str or int or item_class or List[int or str or item_class], state: dict or Agent_state) -> None:
         """
-        Mark an agent as active in the fleet.
+        Set the state of an agent in the fleet.
 
-        :param agent: The agent to flag as active. Can be the agent object, the agent ID, or a list of agent IDs.
+        :param agent: The agent to set the state for. Can be the agent object, the agent ID, or a list of agent IDs.
         """
+        # -> If the state is a dictionary, convert it to an Agent_state object
+        if isinstance(state, dict):
+            state = Agent_state.from_dict(state)
 
-        # -> If the input is a list, flag each agent in the list as active individually recursively
-        if isinstance(agent, list):
-            for a in agent:
-                self.flag_agent_active(agent=a)
-            return
-
-        # > Update the agent status to 'active'
+        # -> Update the state of the agent
         self.update_item_fields(
             item=agent,
-            field_value_pair={"status": "active"}
-        )
-
-    def flag_agent_inactive(self, agent: str or int or List[int or str]) -> None:
-        """
-        Mark an agent as inactive in the fleet.
-
-        :param agent: The agent to flag as inactive. Can be the agent object, the agent ID, or a list of agent IDs.
-        """
-
-        # -> If the input is a list, flag each agent in the list as inactive individually recursively
-        if isinstance(agent, list):
-            for a in agent:
-                self.flag_agent_inactive(agent=a)
-            return
-
-        # > Update the agent status to 'inactive'
-        self.update_item_fields(
-            item=agent,
-            field_value_pair={"status": "inactive"}
+            field_value_pair={"state": state}
         )
 
     # ============================================================== Add
@@ -229,9 +213,18 @@ if "__main__" == __name__:
         affiliations=["affiliation 1", "affiliation 2"],
         specs={"spec1": "value1", "spec2": "value2"},
         skillset=["skill1", "skill2"],
-        status="active",
-        state="state 1",
-        last_contact_timestamp=datetime.now()
+        state=Agent_state(
+            agent_id=1,
+            timestamp=1.0,
+            battery_level=100,
+            stuck=False,
+            x=0,
+            y=0,
+            z=0,
+            u=0,
+            v=0,
+            w=0
+        )
     )
     print(agent1)
     print(agent1.to_dict())

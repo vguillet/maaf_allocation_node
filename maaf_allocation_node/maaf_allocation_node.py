@@ -9,6 +9,7 @@ from random import randint
 from json import dumps, loads
 from typing import List, Optional
 from copy import deepcopy
+from datetime import datetime
 from pprint import pprint
 
 from tabulate import tabulate
@@ -25,8 +26,10 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 # Local Imports
 from .node_config import *
 from .maaf_agent import maaf_agent
-from .Tasks_dataclasses import Task, Task_log
-from .Fleet_dataclasses import Agent, Fleet
+from .maaf_dataclass_cores import maaf_list_dataclass
+from .maaf_task_dataclasses import Task, Task_log
+from .maaf_fleet_dataclasses import Agent, Fleet
+from .maaf_state_dataclasses import Agent_state
 from .Tools import *
 from maaf_msgs.msg import TeamCommStamped
 
@@ -34,19 +37,7 @@ from maaf_msgs.msg import TeamCommStamped
 
 
 class maaf_allocation_node(maaf_agent):
-    def __init__(
-            self,
-            agent_id: str,
-            name: str,
-            agent_class,
-            hierarchy_level: int = 0,
-            affiliations: list = [],
-            specs: dict = None,
-            skillset: list = None,
-            bid_evaluation_function=None,
-            fleet: Fleet = Fleet(),
-            task_log: Task_log = Task_log()
-         ):
+    def __init__(self):
 
         # ---- Init parent class
         maaf_agent.__init__(self)
@@ -154,28 +145,6 @@ class maaf_allocation_node(maaf_agent):
             columns=self.fleet.ids_active
         )
 
-        # -----------------------------------  Gather states
-
-        self.state_awareness_dict = {
-            "id_card": self.id_card,
-            "tasks": self.task_log.to_list(),
-            "fleet": self.fleet.to_list()
-        }
-
-        self.local_allocation_state_dict = {
-            "task_list_x": self.task_list_x,
-            "local_bids_c": self.local_bids_c,
-            "local_allocations_d": self.local_allocations_d
-        }
-
-        self.shared_allocation_state_dict = {
-            "winning_bids_y": self.winning_bids_y,
-            "current_bids_b": self.current_bids_b,
-            "current_bids_priority_beta": self.current_bids_priority_beta,
-            "current_allocations_a": self.current_allocations_a,
-            "current_allocations_priority_alpha": self.current_allocations_priority_alpha
-        }
-
         # -> Initialise previous state hash
         self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
 
@@ -185,6 +154,46 @@ class maaf_allocation_node(maaf_agent):
     # ============================================================== PROPERTIES
     # ---------------- Self state
     # >>>> Base
+    @property
+    def state_awareness_dict(self):
+        """
+        State awareness at current time step (serialised)
+
+        :return: dict
+        """
+        return {
+            "tasks": self.task_log.to_list(),
+            "fleet": self.fleet.to_list()
+        }
+
+    @property
+    def local_allocation_state_dict(self):
+        """
+        Local allocation state at current time step (serialised)
+
+        :return: dict
+        """
+        return {
+            "task_list_x": self.task_list_x.to_dict(),
+            "local_bids_c": self.local_bids_c.to_dict(),
+            "local_allocations_d": self.local_allocations_d.to_dict()
+        }
+
+    @property
+    def shared_allocation_state_dict(self):
+        """
+        Shared allocation state at current time step (serialised)
+
+        :return: dict
+        """
+        return {
+            "winning_bids_y": self.winning_bids_y.to_dict(),
+            "current_bids_b": self.current_bids_b.to_dict(),
+            "current_bids_priority_beta": self.current_bids_priority_beta.to_dict(),
+            "current_allocations_a": self.current_allocations_a.to_dict(),
+            "current_allocations_priority_alpha": self.current_allocations_priority_alpha.to_dict()
+        }
+
     @property
     def state(self) -> dict:
         """
@@ -203,6 +212,7 @@ class maaf_allocation_node(maaf_agent):
 
         :return: dict
         """
+
         return self.state_awareness_dict | self.shared_allocation_state_dict
 
     @property
@@ -253,15 +263,17 @@ class maaf_allocation_node(maaf_agent):
         # -> Convert quaternion to euler
         u, v, w = euler_from_quaternion(quat=pose_msg.pose.orientation)
 
-        # -> Update pose
-        self.pose = {
-            "x": pose_msg.pose.position.x,
-            "y": pose_msg.pose.position.y,
-            "z": pose_msg.pose.position.z,
-            "u": u,
-            "v": v,
-            "w": w
-        }
+        # -> Update state
+        # > Pose
+        self.fleet[self.id]["state"]["x"] = pose_msg.pose.position.x
+        self.fleet[self.id]["state"]["y"] = pose_msg.pose.position.y
+        self.fleet[self.id]["state"]["z"] = pose_msg.pose.position.z
+        self.fleet[self.id]["state"]["u"] = u
+        self.fleet[self.id]["state"]["v"] = v
+        self.fleet[self.id]["state"]["w"] = w
+
+        # > Timestamp
+        self.fleet[self.id]["state"]["timestamp"] = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
 
     def task_msg_subscriber_callback(self, task_msg) -> None:
         """
@@ -271,26 +283,48 @@ class maaf_allocation_node(maaf_agent):
         """
 
         # -> Check if the message is for the agent
-        # msg_target = task_msg.target
-        #
-        # # -> If the message is not for the agent...
-        # if msg_target != self.id and msg_target != "all" and msg_target not in self.fleet.ids_active:
-        #     msg, rebroadcast = self.check_rebroadcast(msg=task_msg)
-        #
-        #     if rebroadcast:
-        #         self.fleet_msgs_pub.publish(msg)
+        msg_target = task_msg.target
 
-        # -> Unpack msg
-        task_list = loads(task_msg.memo)    # Task from task factory
+        # -> If the message is not for the agent...
+        if msg_target != self.id and msg_target != "all":
+            pass
+            ## -> Check if the agent should rebroadcast the message
+            # msg, rebroadcast = self.check_rebroadcast(msg=task_msg, publisher=self.fleet_msgs_pub)
 
-        ## -> Create new task
-        # task = self.__task_factory(task_id=task_data["id"], task_type=task_data["type"], task_instructions=task_data["instructions"])
+        # -> Create new task
+        if task_msg.meta_action == "add":
+            # -> Unpack msg
+            task_dict = loads(task_msg.memo)  # Task from task factory
 
-        # -> Add task to local tasks and update local states
-        self.__update_situation_awareness(task_list=task_list, fleet=None)
+            # TODO: Remove this line once task creation handles stamp creation
+            task_dict["creation_timestamp"] = self.current_timestamp
+
+            # -> Create task object
+            task = Task.from_dict(task_dict)
+
+            # -> Update state awareness
+            self.__update_situation_awareness(task_list=[task], fleet=None)
 
         # -> Select task
         self.select_task()
+
+        # -> Update previous state hash
+        self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
+
+        # -> Publish allocation state to the fleet to share the new task
+        self.publish_allocation_state_msg()
+
+        # # -> If state has changed, update local states (only publish when necessary)
+        # if self.shared_allocation_state_change:
+        #     # -> Update previous state hash
+        #     self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
+        #
+        #     # -> Publish allocation state to the fleet
+        #     self.publish_allocation_state_msg()
+        #
+        # else:
+        #     # -> Check if the agent should rebroadcast the message
+        #     msg, rebroadcast = self.check_rebroadcast(msg=task_msg, publisher=self.fleet_msgs_pub)
 
     def fleet_msg_update_timer_callback(self) -> None:
         """
@@ -308,9 +342,13 @@ class maaf_allocation_node(maaf_agent):
         :param team_msg: TeamComm message
         """
         # ---- Unpack msg
-        # -> Ignore own messages    TODO: Re-enable when done
-        # if team_msg.source == self.id:
-        #     return
+        # -> Check if the message is for the agent
+        msg_target = team_msg.target
+
+        # -> If the message is not for the agent...
+        if msg_target == self.id and msg_target != "all":
+            # -> Check if the agent should rebroadcast the message
+            msg, rebroadcast = self.check_rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
         self.get_logger().info(f"<<<<<<<<<<<<<<<<<<<< Allocation state received from {team_msg.source}")
 
@@ -318,9 +356,15 @@ class maaf_allocation_node(maaf_agent):
         allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
+        # > Convert task list to Task objects
+        task_list = [Task.from_dict(task) for task in allocation_state["tasks"]]
+
+        # > Convert fleet to Agent objects
+        fleet = [Agent.from_dict(agent) for agent in allocation_state["fleet"]]
+
         self.__update_situation_awareness(
-            task_list=allocation_state["tasks"],
-            fleet=allocation_state["fleet"]
+            task_list=task_list,
+            fleet=fleet
         )
 
         # -> Update shared states
@@ -342,8 +386,20 @@ class maaf_allocation_node(maaf_agent):
         # -> Select new task
         self.select_task()
 
+        # -> If state has changed, update local states (only publish when necessary)
+        if self.shared_allocation_state_change:
+            # -> Update previous state hash
+            self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
+
+            # -> Publish allocation state to the fleet
+            self.publish_allocation_state_msg()
+
+        else:
+            # -> Check if the agent should rebroadcast the message
+            msg, rebroadcast = self.check_rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
+
     # >>>> CBAA
-    def __update_situation_awareness(self, task_list: Optional[List[dict]], fleet: Optional[List[dict]]) -> None:
+    def __update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
         """
         Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
         local states with new rows and columns for new tasks and agents
@@ -354,15 +410,15 @@ class maaf_allocation_node(maaf_agent):
         
         self.get_logger().info(f"> Updating situation awareness")
         
-        def add_agent(agent_dict: dict) -> None:
+        def add_agent(agent: Agent) -> None:
             """
             Add new agent to local fleet and extend local states with new columns for new agent
             """
             # -> Add new agent to local fleet
-            self.fleet.add_agent(agent=agent_dict)
+            self.fleet.add_agent(agent=agent)
 
             # -> Add a column to all relevant allocation lists and matrices with new agent
-            agent_id = agent_dict["id"]
+            agent_id = agent.id
 
             # > Local
             self.local_bids_c[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
@@ -375,16 +431,16 @@ class maaf_allocation_node(maaf_agent):
             self.current_allocations_a[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
             self.current_allocations_priority_alpha[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
 
-        def remove_agent(agent_dict):
+        def remove_agent(agent):
             # -> Remove agent from local fleet
             # > Flag agent is inactive
-            self.fleet.flag_agent_inactive(agent=agent_dict["id"])
+            self.fleet.set_agent_state(agent=agent, state=agent.state)
 
             # TODO: Figure out how to deal with removing bids from the winning bid matrix (full reset vs bid owner tracking). For now, reset winning bids matrix (full reset)
             self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
 
             # -> Remove agent from all relevant allocation lists and matrices
-            agent_id = agent_dict["id"]
+            agent_id = agent.id
 
             # > Local
             self.local_bids_c.drop(columns=agent_id, inplace=True)
@@ -397,15 +453,15 @@ class maaf_allocation_node(maaf_agent):
             self.current_allocations_a.drop(columns=agent_id, inplace=True)
             self.current_allocations_priority_alpha.drop(columns=agent_id, inplace=True)
 
-        def add_task(task_dict: dict) -> None:
+        def add_task(task: Task) -> None:
             """
             Add new task to local tasks and extend local states with new rows for new task
             """
             # -> Add new task to local tasks
-            self.task_log.add_task(task=task_dict)
+            self.task_log.add_task(task=task)
 
             # -> Add a row to all allocation lists and matrices with new task
-            task_id = task_dict["id"]
+            task_id = task.id
             
             # > Local
             self.task_list_x[task_id] = 0
@@ -423,20 +479,20 @@ class maaf_allocation_node(maaf_agent):
                                                                              index=self.fleet.ids_active)
 
             # -> Estimate bid(s) for new task
-            self.bid_evaluation(task_id=task_id)
+            self.bid(task=self.task_log[task_id])
 
-        def terminate_task(task_dict: dict) -> None:
+        def terminate_task(task: Task) -> None:
             # -> Update task log
             self.task_log.update_item_fields(
-                item=task_dict["id"],
+                item=task.id,
                 field_value_pair={
-                    "status": task_dict["status"],
-                    "termination_timestamp": task_dict["termination_timestamp"]
+                    "status": task.status,  # Termination reason: completed, cancelled, failed
+                    "termination_timestamp": task.termination_timestamp
                 }
             )
             
             # -> Remove task from all allocation lists and matrices
-            task_id = task_dict["id"]
+            task_id = task.id
             
             # > Local
             self.task_list_x.drop(index=task_id, inplace=True)
@@ -457,35 +513,41 @@ class maaf_allocation_node(maaf_agent):
         if fleet is not None:
             for agent in fleet:
                 # -> If the agent is not in the local fleet ...
-                if agent["id"] not in self.fleet.ids:
+                if agent.id not in self.fleet.ids:
                     # -> If the agent is active, add to fleet and extend local states with new columns
-                    if agent["status"] != "inactive":
-                        add_agent(agent_dict=agent)
+                    if agent.state.status == "active":
+                        add_agent(agent=agent)
 
                     # -> If the agent is inactive, only add to the local fleet
                     else:
                         self.fleet.add_agent(agent=agent)
 
-                # -> Else if the agent is in the fleet and is inactive, flag as inactive in fleet and remove columns from the local states
-                elif agent["status"] == "inactive":
-                    remove_agent(agent_dict=agent)
+                # -> Else if the new agent state is more recent than the local agent state, update
+                elif agent.state.timestamp > self.fleet[agent.id].state.timestamp:
+                    # -> If the agent is active, update the agent state in the fleet to the latest state
+                    if agent.state.status == "active":
+                        self.fleet.set_agent_state(agent=agent, state=agent["state"])
+
+                    # -> If the agent is inactive, update state and remove agent from local states
+                    else:
+                        remove_agent(agent=agent)
 
         # -> Update task log and local states
         if task_list is not None:
-            for task_dict in task_list:
+            for task in task_list:
                 # -> If the task is not in the task log ...
-                if task_dict["id"] not in self.task_log.ids:
+                if task.id not in self.task_log.ids:
                     # -> If the task is pending, add to task log and extend local states with new rows
-                    if task_dict["status"] == "pending":
-                        add_task(task_dict=task_dict)
+                    if task.status == "pending":
+                        add_task(task=task)
 
                     # -> If the task is completed, only add to the task log
                     else:
-                        self.task_log.add_task(task=task_dict)
+                        self.task_log.add_task(task=task)
                 
                 # -> Else if the task is in the task log and is not pending, flag as terminated in task log and remove rows from the local states
-                elif task_dict["status"] != "pending" and self.task_log[task_dict["id"]]["status"] == "pending":
-                    terminate_task(task_dict=task_dict)
+                elif task.status != "pending" and self.task_log[task.id].status == "pending":
+                    terminate_task(task=task)
                 
     def __update_shared_states(
             self,
@@ -593,14 +655,14 @@ class maaf_allocation_node(maaf_agent):
         msg.target = "all"
 
         msg.meta_action = "allocation update"
-        msg.memo = self.serialise(state=self.allocation_state)
+        msg.memo = dumps(self.allocation_state)
 
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
 
     def publish_goal(self, task_id):
         """
-        Publish goal to the robot's goal topic for execution as TeamCommStamped.msg message
+        Publish goal to the robot's goal topic for execution as TeamCommStamped message
 
         :param task_id: task id
         """
@@ -609,7 +671,7 @@ class maaf_allocation_node(maaf_agent):
         msg = TeamCommStamped()
 
         # > Metadata
-        msg.stamp = self.current_timestamp
+        msg.stamp = timestamp_to_ros_time(timestamp=self.current_timestamp).to_msg()
         msg.trace = [self.id]
 
         # > Tracker
@@ -704,14 +766,6 @@ class maaf_allocation_node(maaf_agent):
                 # -> Publish goal
                 self.publish_goal(task_id=selected_task)
 
-        # -> If state has changed, update local states (only publish when necessary)
-        if self.shared_allocation_state_change:
-            # -> Publish allocation state to the fleet
-            self.publish_allocation_state_msg()
-
-            # -> Update previous state hash
-            self.__prev_state_hash_dict = deepcopy(self.__state_hash_dict)
-
     # ---------------- Tools
     # >>>> CBAA
     @staticmethod
@@ -768,27 +822,6 @@ class maaf_allocation_node(maaf_agent):
 
         return tasks_value_x_ij, matrix_updated_ij, priority_updated_ij
 
-    def serialise(self, state: dict) -> str:
-        """
-        Serialise the state
-
-        :param state: State to serialise
-        :return: str
-        """
-
-        serialised_state = {}
-
-        for key, value in state.items():
-            # -> If the value is a pandas dataframe or series ...
-            if key in self.local_allocation_state_dict or key in self.shared_allocation_state_dict:
-                # -> Convert to dictionary
-                serialised_state[key] = value.to_dict()
-
-            else:
-                serialised_state[key] = value
-
-        return dumps(serialised_state)
-
     def deserialise(self, state: str) -> dict:
         """
         Deserialise the state
@@ -798,10 +831,12 @@ class maaf_allocation_node(maaf_agent):
         """
 
         deserialised_state = loads(state)
-
+        
+        pandas_dicts = self.local_allocation_state_dict.keys() | self.shared_allocation_state_dict.keys()
+        
         for key, value in deserialised_state.items():
-            # -> If the value is a dictionary ...
-            if key in self.local_allocation_state_dict or key in self.shared_allocation_state_dict:
+            # -> If the value is in the local or shared allocation state ...
+            if key in pandas_dicts:
                 # -> Convert to pandas dataframe or series
                 deserialised_state[key] = pd.DataFrame(value) if isinstance(value, dict) else pd.Series(value)
 
@@ -816,16 +851,7 @@ def main(args=None):
     # `rclpy` library is initialized
     rclpy.init(args=args)
 
-    path_sequence = maaf_allocation_node(
-        agent_id=f"Turtle_1",
-        # agent_id=f"agent_{randint(0, 10000)}",
-        name="agent_1",
-        agent_class="robot",
-        hierarchy_level=1,
-        specs=None,
-        skillset=None,
-        bid_evaluation_function=random_bid_evaluation
-    )
+    path_sequence = maaf_allocation_node()
 
     rclpy.spin(path_sequence)
 

@@ -23,7 +23,7 @@ class Task:
     instructions: List[str]     # [(skill_ref, task_details_for skill), ...]
 
     # > Task status
-    creation_timestamp: datetime or int or float
+    creation_timestamp: float
     termination_timestamp: Optional[datetime] = None
     status: str = "pending"     # pending, completed, cancelled
 
@@ -47,7 +47,7 @@ class Task:
         :return: A dictionary with field names as keys and current values.
         """
         # -> Get the fields of the Task class
-        task_fields = fields(Task)
+        task_fields = fields(self)
 
         # -> Create a dictionary with field names as keys and their current values
         fields_dict = {f.name: getattr(self, f.name) for f in task_fields}

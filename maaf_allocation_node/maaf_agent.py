@@ -32,17 +32,22 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 # Local Imports
 from .node_config import *
-from .Tasks_dataclasses import Task, Task_log
-from .Fleet_dataclasses import Agent, Fleet
+from .maaf_task_dataclasses import Task, Task_log
+from .maaf_fleet_dataclasses import Agent, Fleet
+from .maaf_state_dataclasses import Agent_state
 from .Tools import *
 from maaf_msgs.msg import TeamCommStamped
 
 ##################################################################################################################
 
 
-def bid_evaluation(self, task_id):
-    # TODO: Implement bid evaluation, for now random bid for self only
-    self.local_bids_c.loc[task_id, self.id] = randint(0, 10000)
+def random_id_evaluation(task: Task, agent_lst: list[Agent]) -> list[dict]:
+    bids = []
+
+    for agent in agent_lst:
+        bids.append({agent.id: randint(0, 10000)})
+
+    return bids
 
 
 class maaf_agent(Node):
@@ -73,7 +78,7 @@ class maaf_agent(Node):
         self.skillset = []
 
         # TODO: Implement bid evaluation function selection logic
-        self.bid_evaluation_function = bid_evaluation
+        self.bid_evaluation_function = random_id_evaluation
 
         # ---- Fleet data
         """
@@ -101,9 +106,21 @@ class maaf_agent(Node):
                     affiliations=self.affiliations,
                     specs=self.specs,
                     skillset=self.skillset,
-                    status="active"
+                    # TODO: Implement state init
+                    state=Agent_state(
+                        agent_id=self.id,
+                        timestamp=self.current_timestamp,
+                        battery_level=100,
+                        stuck=False,
+                        x=0,
+                        y=0,
+                        z=0,
+                        u=0,
+                        v=0,
+                        w=0
                 )
             )
+        )
 
         # ---- Tasks dict
         """
@@ -139,7 +156,7 @@ class maaf_agent(Node):
 
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
-                topic=f"/fleet_msgs",
+                topic=f"/fleet/fleet_msgs",
                 callback=self.team_msg_subscriber_callback,
                 qos_profile=qos
             )
@@ -153,7 +170,7 @@ class maaf_agent(Node):
 
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
-                topic=f"/{self.id}/sim/fleet_msgs_filtered",
+                topic=f"/{self.id}/sim/fleet/fleet_msgs_filtered",
                 callback=self.team_msg_subscriber_callback,
                 qos_profile=qos
             )
@@ -165,7 +182,7 @@ class maaf_agent(Node):
         )
         self.robot_task_sub = self.create_subscription(
             msg_type=TeamCommStamped,
-            topic=f"/task",
+            topic=f"/fleet/task",
             callback=self.task_msg_subscriber_callback,
             qos_profile=qos
         )
@@ -179,7 +196,7 @@ class maaf_agent(Node):
 
         self.robot_pose_sub = self.create_subscription(
             msg_type=PoseStamped,
-            topic=f"/{self.id}/pose",
+            topic=f"/{self.id}/data/pose",
             callback=self.pose_subscriber_callback,
             qos_profile=qos
         )
@@ -193,7 +210,7 @@ class maaf_agent(Node):
 
         self.fleet_msgs_pub = self.create_publisher(
             msg_type=TeamCommStamped,
-            topic=f"/fleet_msgs",
+            topic=f"/fleet/fleet_msgs",
             qos_profile=qos
         )
 
@@ -203,7 +220,7 @@ class maaf_agent(Node):
         # Goals publisher
         self.goal_sequence_publisher = self.create_publisher(
             msg_type=TeamCommStamped,
-            topic=f"/{self.id}/goal",
+            topic=f"/{self.id}/control/goal",
             qos_profile=qos
         )
 
@@ -225,7 +242,12 @@ class maaf_agent(Node):
     # ============================================================== PROPERTIES
     # ---------------- Generic
     @property
-    def current_timestamp(self):
+    def current_timestamp(self) -> float:
+        """
+        Get current timestamp as float value in seconds
+
+        :return: timestamp float in seconds
+        """
         # -> Get current ROS time as timestamp
         time_obj = self.get_clock().now().to_msg()
 
@@ -234,34 +256,6 @@ class maaf_agent(Node):
     @property
     def id_card(self) -> dict:
         return self.fleet[self.id].to_dict()
-
-    def __task_factory(
-            self,
-            task_id: str or int,
-            task_type: str,
-            task_affiliations: List[str],
-            priority: int,
-            task_instructions: List[str]) -> Task:
-        """
-        Construct a task object from the Task dataclass
-        """
-
-        return Task(
-            # > Metadata
-            id=task_id,
-            type=task_type,
-            creator=self.id,
-            affiliations=task_affiliations,
-
-            # > Task data
-            priority=priority,
-            instructions=task_instructions,
-
-            # > Task status
-            creation_timestamp=self.current_timestamp,
-            termination_timestamp=None,
-            status="pending"
-        )
 
     # ---------------- Situation state
     @property
@@ -330,13 +324,15 @@ class maaf_agent(Node):
         pass
 
     # ---------------- Processes
-    def bid(self, task_data):
+    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Bid for a task
 
-        :param task_data: task data
+        :param task: Task object
+
+        :return: Bid(s) list, with target agent id and corresponding bid value
         """
-        return self.bid_evaluation_function(task_data)
+        return self.bid_evaluation_function(task=task, agent_lst=agent_lst)
 
     @abstractmethod
     def publish_allocation_state_msg(self):
@@ -355,15 +351,17 @@ class maaf_agent(Node):
         pass
 
     # ---------------- Tools
-    def check_rebroadcast(self, msg):
+    def check_rebroadcast(self, msg, publisher):
         """
         Conditional rebroadcast of a message based on the trace
         The trace ensures every msg is only broadcast once per robot
-        The second output (trace_flag), returns whether a msg needs to be re-broadcast based on the trace
+        The second output (trace_flag), returns whether a msg was re-broadcasted based on the trace
         """
         # -> If self not in trace, add self to trace and re-broadcast
         if self.id not in msg.trace:
             msg.trace.append(self.id)
+
+            publisher.publish(msg)
             return msg, True
 
         # -> If self already in trace, do not re-broadcast
