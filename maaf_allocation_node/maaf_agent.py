@@ -41,11 +41,14 @@ from maaf_msgs.msg import TeamCommStamped
 ##################################################################################################################
 
 
-def random_id_evaluation(task: Task, agent_lst: list[Agent]) -> list[dict]:
+def random_bid_evaluation(task: Task, agent_lst: list[Agent]) -> list[dict]:
     bids = []
 
     for agent in agent_lst:
-        bids.append({agent.id: randint(0, 10000)})
+        bids.append({
+            "agent_id": agent.id,
+            "bid": randint(0, 10000)
+        })
 
     return bids
 
@@ -78,7 +81,7 @@ class maaf_agent(Node):
         self.skillset = []
 
         # TODO: Implement bid evaluation function selection logic
-        self.bid_evaluation_function = random_id_evaluation
+        self.bid_evaluation_function = random_bid_evaluation
 
         # ---- Fleet data
         """
