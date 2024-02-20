@@ -240,8 +240,6 @@ class maaf_agent(Node):
         #     callback=self.auction_timer_callback
         # )
 
-        self.get_logger().info(f"MAAF agent {self.id}: Pubsubs initialized")
-
     # ============================================================== PROPERTIES
     # ---------------- Generic
     @property

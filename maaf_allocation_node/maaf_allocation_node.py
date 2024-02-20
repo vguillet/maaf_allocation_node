@@ -297,7 +297,6 @@ class maaf_allocation_node(maaf_agent):
 
         # -> Create new task
         if task_msg.meta_action == "add":
-            # self.get_logger().info(f">>>>>>>>>>> Found New Task: {pformat(task_msg.memo)}")
             # -> Unpack msg
             task_dict = loads(task_msg.memo)  # Task from task factory
 
@@ -329,8 +328,6 @@ class maaf_allocation_node(maaf_agent):
         # -> Publish allocation state to the fleet
         self.publish_allocation_state_msg()
 
-        # self.get_logger().info(f">>>>>>>>>>>>>>>>>>>> Allocation state published")
-
     def team_msg_subscriber_callback(self, team_msg) -> None:
         """
         Callback for team messages, consensus phase of the CBAA algorithm
@@ -346,8 +343,6 @@ class maaf_allocation_node(maaf_agent):
             # -> Check if the agent should rebroadcast the message
             msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
             return
-
-        # self.get_logger().info(f"<<<<<<<<<<<<<<<<<<<< Allocation state received from {team_msg.source}")
 
         # -> Deserialise allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
@@ -406,8 +401,6 @@ class maaf_allocation_node(maaf_agent):
         :param task_list: Tasks dict
         :param fleet: Fleet dict
         """
-        
-        # self.get_logger().info(f"> Updating situation awareness")
         
         def add_agent(agent: Agent) -> None:
             """
@@ -570,11 +563,6 @@ class maaf_allocation_node(maaf_agent):
         :param received_current_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
 
-        # self.get_logger().info(f"> Updating shared states")
-
-        # self.print_state(shared_allocation_state=True)
-        # print(received_current_bids_b)
-
         received_tasks_ids = list(received_current_bids_b.index)
         received_agent_ids = list(received_current_bids_b.columns)
 
@@ -622,9 +610,7 @@ class maaf_allocation_node(maaf_agent):
         :param received_winning_bids_y: Winning bids list y received from the fleet
         :param task_id: task id
         """
-        
-        # self.get_logger().info(f"> Updating task {task_id}")
-        
+
         # -> Create set of agents with imposed allocations
         agents_with_imposed_allocations = set(
             self.current_allocations_a.loc[task_id, self.current_allocations_a.loc[task_id] == 1].index.to_list()
@@ -636,9 +622,6 @@ class maaf_allocation_node(maaf_agent):
             winning_agent = self.current_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
 
         else:
-            print(self.winning_bids_y)
-            print(received_winning_bids_y)
-
             # -> Compare received winning bids with local winning bids
             winning_agent = self.id if self.winning_bids_y.loc[task_id, "winning_bids_y"] >= received_winning_bids_y.loc[task_id, "winning_bids_y"] else None
 
@@ -648,6 +631,8 @@ class maaf_allocation_node(maaf_agent):
         if winning_agent is not self.id:
             # -> If the winning agent is not the agent, remove the task from the task list
             self.task_list_x.loc[task_id] = 0
+
+            self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list")
 
     # ---------------- Processes
     # >>>> Base
@@ -695,6 +680,8 @@ class maaf_allocation_node(maaf_agent):
 
         # -> Publish message
         self.goal_sequence_publisher.publish(msg)
+
+        self.get_logger().info(f"{self.id} > Published goal: task {task_id} to the robot's goal topic")
 
     # >>>> CBAA
     def select_task(self):
@@ -782,6 +769,8 @@ class maaf_allocation_node(maaf_agent):
 
                 # -> Publish goal   # TODO: Add publisher to cancel task on task cancel
                 self.publish_goal(task_id=selected_task)
+
+                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {self.current_bids_b.loc[valid_tasks, self.id].max()})")
 
     # ---------------- Tools
     # >>>> Prints
