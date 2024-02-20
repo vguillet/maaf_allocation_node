@@ -31,7 +31,7 @@ from .maaf_task_dataclasses import Task, Task_log
 from .maaf_fleet_dataclasses import Agent, Fleet
 from .maaf_state_dataclasses import Agent_state
 from .Tools import *
-from maaf_msgs.msg import TeamCommStamped
+from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 
 ##################################################################################################################
 
@@ -260,6 +260,41 @@ class maaf_allocation_node(maaf_agent):
     # ============================================================== METHODS
     # ---------------- Callbacks
     # >>>> Base
+    def bid_subscriber_callback(self, bid_msg: Bid) -> None:
+        """
+        Callback for the bid subscriber
+
+        :param bid_msg: Bid message
+        """
+
+        # -> Priority merge received bid into current bids b
+        self.priority_merge(
+            matrix_updated_ij=self.current_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
+            matrix_source_ij=bid_msg.value,
+            priority_updated_ij=self.current_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
+            priority_source_ij=bid_msg.priority,
+            reset=True
+        )
+
+    def allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
+        """
+        Callback for the allocation subscriber
+
+        :param allocation_msg: Allocation message
+        """
+
+        # -> Convert allocation action to
+        allocation_state = self.action_to_allocation_state(action=allocation_msg.action)
+
+        if allocation_state is not None:
+            # -> Merge received allocation into current allocation
+            self.priority_merge(
+                matrix_updated_ij=self.current_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+                matrix_source_ij=allocation_state,
+                priority_updated_ij=self.current_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+                priority_source_ij=allocation_msg.priority
+            )
+
     def pose_subscriber_callback(self, pose_msg) -> None:
         """
         Callback for the pose subscriber
@@ -712,14 +747,12 @@ class maaf_allocation_node(maaf_agent):
 
                     # -> Merge local intercessions into allocation intercession
                     if self.hierarchy_level > self.current_allocations_priority_alpha.loc[task_id, agent_id]:
-                        if self.local_allocations_d.loc[task_id, agent_id] == 1:
-                            self.current_allocations_a.loc[task_id, agent_id] = 0  # Set to free allocation
-                        elif self.local_allocations_d.loc[task_id, agent_id] == 2:
-                            self.current_allocations_a.loc[task_id, agent_id] = -1  # Set to blacklisted
-                        elif self.local_allocations_d.loc[task_id, agent_id] == 3:
-                            self.current_allocations_a.loc[task_id, agent_id] = 1  # Set to imposed allocation
-                        else:
-                            pass  # Do nothing
+                        allocation_state = self.action_to_allocation_state(
+                            action=self.local_allocations_d.loc[task_id, agent_id]
+                        )
+
+                        if allocation_state is not None:
+                            self.current_allocations_a.loc[task_id, agent_id] = allocation_state
 
         # ---- Select task
         # -> If no task is assigned to self, select a task
@@ -829,6 +862,24 @@ class maaf_allocation_node(maaf_agent):
         print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
     # >>>> CBAA
+    @staticmethod
+    def action_to_allocation_state(action: int) -> Optional[int]:
+        """
+        Convert action to allocation state
+
+        :param action: Action to convert
+        :return: int
+        """
+
+        if action == 1:
+            return 0            # Free allocation
+        elif action == 2:
+            return -1           # Blacklisted
+        elif action == 3:
+            return 1            # Imposed allocation
+        else:
+            return None         # No action
+
     @staticmethod
     def priority_merge(matrix_updated_ij: float,
                        matrix_source_ij: float,

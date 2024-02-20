@@ -36,7 +36,7 @@ from .maaf_task_dataclasses import Task, Task_log
 from .maaf_fleet_dataclasses import Agent, Fleet
 from .maaf_state_dataclasses import Agent_state
 from .Tools import *
-from maaf_msgs.msg import TeamCommStamped
+from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 
 ##################################################################################################################
 
@@ -151,7 +151,7 @@ class maaf_agent(Node):
         """
         # ----------------------------------- Subscribers
         if RUN_MODE == OPERATIONAL:
-            # ---------- fleet_msgs
+            # ---------- /fleet/fleet_msgs
             qos = QoSProfile(
                 reliability=QoSReliabilityPolicy.RELIABLE,
                 history=QoSHistoryPolicy.KEEP_ALL,
@@ -165,7 +165,7 @@ class maaf_agent(Node):
             )
 
         elif RUN_MODE == SIM:
-            # ---------- fleet_msgs_filtered
+            # ---------- /sim/fleet/fleet_msgs_filtered
             qos = QoSProfile(
                 reliability=QoSReliabilityPolicy.RELIABLE,
                 history=QoSHistoryPolicy.KEEP_ALL,
@@ -173,12 +173,12 @@ class maaf_agent(Node):
 
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
-                topic=f"/{self.id}/sim/fleet/fleet_msgs_filtered",
+                topic=f"/sim/fleet/fleet_msgs_filtered",
                 callback=self.team_msg_subscriber_callback,
                 qos_profile=qos
             )
 
-        # ---------- robot_.../task
+        # ---------- /fleet/task
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_ALL,
@@ -190,7 +190,7 @@ class maaf_agent(Node):
             qos_profile=qos
         )
 
-        # ---------- robot_.../pose
+        # ---------- /robot_.../pose
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             history=QoSHistoryPolicy.KEEP_LAST,
@@ -204,8 +204,34 @@ class maaf_agent(Node):
             qos_profile=qos
         )
 
+        # ---------- /fleet/bids
+        qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_ALL,
+        )
+
+        self.fleet_bid_sub = self.create_subscription(
+            msg_type=Bid,
+            topic=f"/fleet/bids",
+            callback=self.bid_subscriber_callback,
+            qos_profile=qos
+        )
+
+        # ---------- /fleet/allocation
+        qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_ALL,
+        )
+
+        self.fleet_allocation_sub = self.create_subscription(
+            msg_type=Allocation,
+            topic=f"/fleet/allocation",
+            callback=self.allocation_subscriber_callback,
+            qos_profile=qos
+        )
+
         # ----------------------------------- Publishers
-        # ---------- fleet_msgs
+        # ---------- /fleet/fleet_msgs
         qos = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_ALL,
@@ -217,8 +243,11 @@ class maaf_agent(Node):
             qos_profile=qos
         )
 
-        # ---------- robot_.../goal
-        qos = QoSProfile(depth=1)
+        # ---------- /robot_.../goal
+        qos = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_ALL,
+        )
 
         # Goals publisher
         self.goal_sequence_publisher = self.create_publisher(
@@ -290,6 +319,24 @@ class maaf_agent(Node):
 
     # ============================================================== METHODS
     # ---------------- Callbacks
+    @abstractmethod
+    def bid_subscriber_callback(self, bid_msg: Bid) -> None:
+        """
+        Callback for the bid subscriber
+
+        :param bid_msg: Bid message
+        """
+        pass
+
+    @abstractmethod
+    def allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
+        """
+        Callback for the allocation subscriber
+
+        :param allocation_msg: Allocation message
+        """
+        pass
+
     @abstractmethod
     def pose_subscriber_callback(self, pose_msg):
         """

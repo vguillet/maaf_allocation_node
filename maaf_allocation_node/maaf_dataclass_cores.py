@@ -50,24 +50,26 @@ class maaf_list_dataclass:
         :param field_value_pair: A dict containing the field and value to update.
         """
         # -> If item is a string or int, find the item with the given ID
-        if isinstance(item, (str, int)):
+        if isinstance(item, str) or isinstance(item, int):
             item = self[item]
 
         # If the item does not exist, warn the user
         if item not in self.items:
             if DEBUG:
                 if not isinstance(item, self.item_class):
-                    print(f"!!! Update item fields failed: {self.item_class} with id '{item}' does not exist in the item log !!!")
+                    print(f"!!! Update item fields failed (1): {self.item_class} with id '{item}' does not exist in the item log ({self.ids})!!!")
                 else:
-                    print(f"!!! Update item fields failed: {self.item_class} with id '{item.id}' does not exist in the item log !!!")
+                    print(f"!!! Update item fields failed (2): {self.item_class} with id '{item.id}' does not exist in the item log  ({self.ids})!!!")
             return
 
         for key, value in field_value_pair.items():
+            setattr(item, key, value)
+
             # > Update the field if it exists
             if hasattr(item, key):
                 setattr(item, key, value)
             else:
-                if DEBUG: print(f"!!! Update item fields failed: {self.item_class} with id '{item.id}' does not have field '{key}' !!!")
+                if DEBUG: print(f"!!! Update item fields failed (3): {self.item_class} with id '{item.id}' does not have field '{key}' !!!")
 
     # ============================================================== Add
     def add_item(self, item: item_class) -> None:
