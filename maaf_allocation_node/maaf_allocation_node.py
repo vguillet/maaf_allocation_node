@@ -350,33 +350,35 @@ class maaf_allocation_node(maaf_agent):
         # self.get_logger().info(f"<<<<<<<<<<<<<<<<<<<< Allocation state received from {team_msg.source}")
 
         # -> Deserialise allocation state
-        allocation_state = self.deserialise(state=team_msg.memo)
+        received_allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
         # > Convert task list to Task objects
-        task_list = [Task.from_dict(task) for task in allocation_state["tasks"]]
+        received_task_log = [Task.from_dict(task) for task in received_allocation_state["tasks"]]
 
         # > Convert fleet to Agent objects
-        fleet = [Agent.from_dict(agent) for agent in allocation_state["fleet"]]
+        received_fleet = [Agent.from_dict(agent) for agent in received_allocation_state["fleet"]]
 
         self.__update_situation_awareness(
-            task_list=task_list,
-            fleet=fleet
+            task_list=received_task_log,
+            fleet=received_fleet
         )
 
         # -> Update shared states
         self.__update_shared_states(
-            received_current_bids_b=allocation_state["current_bids_b"],
-            received_current_bids_priority_beta=allocation_state["current_bids_priority_beta"],
-            received_current_allocations_a=allocation_state["current_allocations_a"],
-            received_current_allocations_priority_alpha=allocation_state["current_allocations_priority_alpha"]
+            received_current_bids_b=received_allocation_state["current_bids_b"],
+            received_current_bids_priority_beta=received_allocation_state["current_bids_priority_beta"],
+            received_current_allocations_a=received_allocation_state["current_allocations_a"],
+            received_current_allocations_priority_alpha=received_allocation_state["current_allocations_priority_alpha"]
         )
 
         # -> Update the task in the task list x the agent is assigned to
-        for task_id in self.task_log.ids_pending:
+        for task in received_task_log:
+            task_id = task.id
+
             if self.task_list_x["task_list_x"][task_id] == 1:
                 self.__update_task(
-                    received_winning_bids_y=allocation_state["winning_bids_y"],
+                    received_winning_bids_y=received_allocation_state["winning_bids_y"],
                     task_id=task_id
                 )
 
@@ -570,8 +572,8 @@ class maaf_allocation_node(maaf_agent):
 
         # self.get_logger().info(f"> Updating shared states")
 
-        self.print_state(shared_allocation_state=True)
-        print(received_current_bids_b)
+        # self.print_state(shared_allocation_state=True)
+        # print(received_current_bids_b)
 
         received_tasks_ids = list(received_current_bids_b.index)
         received_agent_ids = list(received_current_bids_b.columns)
@@ -634,6 +636,9 @@ class maaf_allocation_node(maaf_agent):
             winning_agent = self.current_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
 
         else:
+            print(self.winning_bids_y)
+            print(received_winning_bids_y)
+
             # -> Compare received winning bids with local winning bids
             winning_agent = self.id if self.winning_bids_y.loc[task_id, "winning_bids_y"] >= received_winning_bids_y.loc[task_id, "winning_bids_y"] else None
 
