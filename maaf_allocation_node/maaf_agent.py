@@ -225,7 +225,7 @@ class maaf_agent(Node):
 
         self.fleet_allocation_sub = self.create_subscription(
             msg_type=Allocation,
-            topic=f"/fleet/allocation",
+            topic=f"/fleet/allocations",
             callback=self.allocation_subscriber_callback,
             qos_profile=qos
         )
