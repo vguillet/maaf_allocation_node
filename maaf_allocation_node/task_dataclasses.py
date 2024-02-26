@@ -2,7 +2,7 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
-from .maaf_dataclass_cores import maaf_list_dataclass
+from .dataclass_cores import maaf_list_dataclass
 
 DEBUG = True
 
@@ -20,12 +20,14 @@ class Task:
 
     # > Task data
     priority: int
-    instructions: List[str]     # [(skill_ref, task_details_for skill), ...]
+    instructions: dict[str]     # [(skill_ref, task_details_for skill), ...]
 
     # > Task status
     creation_timestamp: float
     termination_timestamp: Optional[datetime] = None
     status: str = "pending"     # pending, completed, cancelled
+
+    # name: str = ""
 
     def __repr__(self) -> str:
         return f"Task {self.id} ({self.type}) - Creation timestamp: {self.creation_timestamp} - Status: {self.status} - Priority: {self.priority}"

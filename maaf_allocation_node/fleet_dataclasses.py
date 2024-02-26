@@ -1,8 +1,8 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
-from .maaf_dataclass_cores import maaf_list_dataclass
-from .maaf_state_dataclasses import Agent_state
+from .dataclass_cores import maaf_list_dataclass
+from .state_dataclasses import Agent_state
 
 DEBUG = True
 
@@ -17,6 +17,8 @@ class Agent:
     specs: dict                             # Specifications of the agent
     skillset: List[str]                     # Skillset of the agent
     state: Agent_state                      # State of the agent, state object
+
+    local: dict = field(default_factory=dict)  # Local data of the agent
 
     def __repr__(self) -> str:
         return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.state.status}"
@@ -40,6 +42,9 @@ class Agent:
         # -> Get the fields of the Agent class
         agent_fields = fields(self)
 
+        # > Exclude the local field
+        agent_fields = [f for f in agent_fields if f.name != "local"]
+
         # -> Create a dictionary with field names as keys and their current values
         fields_dict = {f.name: getattr(self, f.name) for f in agent_fields}
 
@@ -60,6 +65,9 @@ class Agent:
         """
         # -> Get the fields of the Agent class
         agent_fields = fields(cls)
+
+        # > Exclude the local field
+        agent_fields = [f for f in agent_fields if f.name != "local"]
 
         # -> Extract field names from the fields
         field_names = {field.name for field in agent_fields}
@@ -150,7 +158,7 @@ class Fleet(maaf_list_dataclass):
 
     def set_agent_state(self, agent: str or int or item_class or List[int or str or item_class], state: dict or Agent_state) -> None:
         """
-        Set the state of an agent in the fleet.
+        Set the state of an agent in the fleet. State can be a "active" or "inactive" string
 
         :param agent: The agent to set the state for. Can be the agent object, the agent ID, or a list of agent IDs.
         """

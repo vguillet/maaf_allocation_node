@@ -1,7 +1,7 @@
 
 
 from dataclasses import dataclass, fields, field
-from .maaf_dataclass_cores import State
+from .dataclass_cores import State
 
 # Create immutable data classes for the state of an item
 
