@@ -1,3 +1,4 @@
+
 ##################################################################################################################
 
 """
@@ -41,7 +42,11 @@ class maaf_allocation_node(MAAFAgent):
     def __init__(self):
 
         # ---- Init parent class
-        MAAFAgent.__init__(self, node_name="CBAAwI_allocation_node")
+        MAAFAgent.__init__(
+            self,
+            node_name="CBAAwI_allocation_node",
+            skillset=["GOTO"]
+        )
 
         # -----------------------------------  Agent allocation states
         # -> Setup additional CBAA-specific allocation states
@@ -235,22 +240,38 @@ class maaf_allocation_node(MAAFAgent):
         if msg_target != self.id and msg_target != "all":
             return
 
+        # -> Unpack msg
+        task_dict = loads(task_msg.memo)  # Task from task factory
+
+        # -> Ensure id is a string
+        task_dict["id"] = str(task_dict["id"])
+
+        # TODO: Remove this line once task creation handles stamp creation
+        task_dict["creation_timestamp"] = self.current_timestamp
+
+        # -> Create task object
+        task = Task.from_dict(task_dict)
+
         # -> Create new task
-        if task_msg.meta_action == "add":
-            # -> Unpack msg
-            task_dict = loads(task_msg.memo)  # Task from task factory
+        if task_msg.meta_action == "pending":
+            # -> Pass if task is already in the task log
+            if task.id in self.task_log.ids:
+                return
 
-            # -> Ensure id is a string
-            task_dict["id"] = str(task_dict["id"])
+            self.get_logger().info(f"{self.id}   Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
 
-            # TODO: Remove this line once task creation handles stamp creation
-            task_dict["creation_timestamp"] = self.current_timestamp
+        elif task_msg.meta_action == "completed":
+            task_dict["termination_timestamp"] = self.current_timestamp
 
-            # -> Create task object
-            task = Task.from_dict(task_dict)
+            self.get_logger().info(f"{self.id}   Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)-1}")
+            # TODO: Finish implementing task completion
 
-            # -> Update state awareness
-            self.__update_situation_awareness(task_list=[task], fleet=None)
+        elif task_msg.meta_action == "cancelled":
+            # TODO: Implement task cancel
+            pass
+
+        # -> Update situation awareness
+        self.__update_situation_awareness(task_list=[task], fleet=None)
 
         # -> Select task
         self.select_task()
@@ -302,9 +323,12 @@ class maaf_allocation_node(MAAFAgent):
 
         # -> Update the task in the task list x the agent is assigned to
         for task in received_task_log:
+            if task.id not in self.task_log.ids_pending:
+                continue
+
             task_id = task.id
 
-            if self.task_list_x["task_list_x"][task_id] == 1:
+            if self.task_list_x.loc[task_id, "task_list_x"] == 1:
                 self.__update_task(
                     received_winning_bids_y=received_allocation_state["winning_bids_y"],
                     task_id=task_id
@@ -503,8 +527,16 @@ class maaf_allocation_node(MAAFAgent):
 
         # -> For each task ...
         for task_id in received_tasks_ids:
+            # -> If the task has been terminated, skip
+            if task_id not in self.task_log.ids_pending:
+                continue
+
             # -> for each agent ...
             for agent_id in received_agent_ids:
+                #
+                # if agent_id not in self.fleet.ids_active:
+                #     continue
+
                 # -> Priority merge with reset received current bids b into local current bids b
                 # > Determine correct matrix values
                 tasks_value_x_ij_updated, current_bids_b_ij_updated, current_bids_priority_beta_ij_updated = (
@@ -685,7 +717,7 @@ class maaf_allocation_node(MAAFAgent):
                 # -> Update winning bids
                 self.winning_bids_y.loc[selected_task, "winning_bids_y"] = self.current_bids_b.loc[selected_task, self.id]
 
-                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {self.current_bids_b.loc[valid_tasks, self.id].max()})")
+                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.current_bids_b.loc[valid_tasks, self.id].max(), 3)} - Pending task count: {len(self.task_log.ids_pending)-1})")
 
                 # -> Assign goal
                 self.publish_goal_msg(task_id=selected_task, meta_action="assign")
@@ -795,7 +827,7 @@ class maaf_allocation_node(MAAFAgent):
             # -> Reset task value to zero to remove allocation
             if reset:
                 if tasks_value_x_ij == 1:
-                    self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list")
+                    self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list - Pending task count: {len(self.task_log.ids_pending)-1}")
 
                     tasks_value_x_ij = 0
 

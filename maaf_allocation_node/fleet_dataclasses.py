@@ -26,6 +26,12 @@ class Agent:
     def __str__(self) -> str:
         return self.__repr__()
 
+    def has_skill(self, skill: str) -> bool:
+        """
+        Check if the agent has a given skill
+        """
+        return skill in self.skillset
+
     def has_affiliation(self, affiliation: str) -> bool:
         """
         Check if the agent has a given affiliation
@@ -125,31 +131,50 @@ class Fleet(maaf_list_dataclass):
 
     # ============================================================== Get
     def query(self,
-              agent_class: Optional[str] = None,
-              hierarchy_level: Optional[int] = None,
-              affiliation: Optional[str] = None,
-              status: Optional[str] = None
-              ) -> List[Agent]:
+              agent_class: str = None,
+              hierarchy_level: int = None,
+              affiliation: str = None,
+              specs: List[str] = None,
+              skillset: List[str] = None,
+              status: str = None) -> List[Agent]:
         """
-        Query the fleet for agents that match the given criteria.
+        Query the fleet for agents with specific characteristics
 
-        :param agent_class: The class of agent to filter for.
-        :param hierarchy_level: The hierarchy level of the agent to filter for.
-        :param affiliation: The affiliation of the agent to filter for.
-        :param status: The status of the agent to filter for.
+        :param agent_class: The class of the agents to query
+        :param hierarchy_level: The hierarchy level of the agents to query
+        :param affiliation: The affiliation of the agents to query
+        :param specs: The specifications of the agents to query
+        :param skillset: The skillset of the agents to query
+        :param status: The status of the agents to query
 
-        :return: A list of agents that match the given criteria.
+        :return: A list of agents that match the query
         """
 
+        # -> Create a list of agents to return
         filtered_agents = self.items
 
-        if agent_class:
+        # -> Filter the agents by class
+        if agent_class is not None:
             filtered_agents = [agent for agent in filtered_agents if agent.agent_class == agent_class]
+
+        # -> Filter the agents by hierarchy level
         if hierarchy_level is not None:
             filtered_agents = [agent for agent in filtered_agents if agent.hierarchy_level == hierarchy_level]
-        if affiliation:
+
+        # -> Filter the agents by affiliation
+        if affiliation is not None:
             filtered_agents = [agent for agent in filtered_agents if affiliation in agent.affiliations]
-        if status:
+
+        # -> Filter the agents by specs
+        if specs is not None:
+            filtered_agents = [agent for agent in filtered_agents if all([agent.specs[spec] for spec in specs])]
+
+        # -> Filter the agents by skillset
+        if skillset is not None:
+            filtered_agents = [agent for agent in filtered_agents if all([skill in agent.skillset for skill in skillset])]
+
+        # -> Filter the agents by status
+        if status is not None:
             filtered_agents = [agent for agent in filtered_agents if agent.state.status == status]
 
         return filtered_agents

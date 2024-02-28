@@ -26,7 +26,7 @@ def graph_weighted_manhattan_distance_bid(task: Task, agent_lst: list[Agent], en
 
     if env is None:
         # -> Return 0 bids for all agents as the environment is not available
-        logger.info("WARNING: Environment not available")
+        # logger.info("WARNING: Environment not available")
         return [{"agent_id": agent.id, "bid": 0} for agent in agent_lst]
 
     # logger.info(f"Calculating weighted Manhattan distance for task {task.id}")

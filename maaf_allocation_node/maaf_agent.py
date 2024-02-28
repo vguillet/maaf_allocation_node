@@ -27,6 +27,7 @@ from random import randint
 import numpy as np
 import pandas as pd
 from json import dumps, loads
+from pprint import pprint, pformat
 
 # Libs
 # ROS2 Imports
@@ -64,7 +65,8 @@ class MAAFAgent(Node):
             self,
             node_name: str,
             id: str = None,
-            name: str = None
+            name: str = None,
+            skillset: List[str] = None
         ):
         """
         maaf agent class
@@ -95,7 +97,11 @@ class MAAFAgent(Node):
         self.hierarchy_level = 0
         self.affiliations = []
         self.specs = {}
-        self.skillset = ["GOTO"]
+
+        if skillset is None:
+            self.skillset = self.get_parameter("skillset").get_parameter_value().string_array_value
+        else:
+            self.skillset = skillset
 
         # TODO: Implement bid evaluation function selection logic
         # self.bid_evaluation_function = random_bid
@@ -103,6 +109,17 @@ class MAAFAgent(Node):
 
         self.env = None
 
+        # ---- Fleet and task log
+        self.__setup_fleet_and_task_log()
+
+        # ---- Node connections
+        self.__setup_node_pubs_subs()
+
+        # ---- Allocation states
+        self.__setup_allocation_base_states()
+
+    # ============================================================== INIT
+    def __setup_fleet_and_task_log(self) -> None:
         # ---- Fleet data
         """
         Fleet dict of size N_a
@@ -141,9 +158,9 @@ class MAAFAgent(Node):
                         u=0,
                         v=0,
                         w=0
+                    )
                 )
             )
-        )
 
         # ---- Task log
         """
@@ -160,13 +177,6 @@ class MAAFAgent(Node):
         # > Add initial task data to the task log object
         self.task_log.from_list(item_dicts_list=task_log_data)
 
-        # ---- Node connections
-        self.__setup_node_pubs_subs()
-
-        # ---- Allocation states
-        self.__setup_allocation_base_states()
-
-    # ============================================================== INIT
     def __setup_node_pubs_subs(self) -> None:
         """
         Setup node publishers and subscribers
@@ -285,7 +295,7 @@ class MAAFAgent(Node):
         # Goals publisher
         self.goal_sequence_publisher = self.create_publisher(
             msg_type=TeamCommStamped,
-            # topic=f"/{self.id}/control/goal", # TODO: Fix
+            # topic=f"/{self.id}/control/goal", # TODO: Fix/clean up
             topic=f"/goal",
             qos_profile=qos
         )
@@ -318,8 +328,9 @@ class MAAFAgent(Node):
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active,
-            dtype=float
         )
+
+        self.local_bids_c = self.local_bids_c.astype(float)
 
         """
         Local allocations matrix d of size N_t x N_u:
@@ -334,7 +345,6 @@ class MAAFAgent(Node):
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active,
-            dtype=float
         )
 
         # ---- Shared states
@@ -351,6 +361,8 @@ class MAAFAgent(Node):
             columns=["winning_bids_y"]
         )
 
+        self.winning_bids_y = self.winning_bids_y.astype(float)
+
         """
         Current bids matrix b of size N_t x N_u: 
         > highest priority/value bids made across the fleet for each task and each agent
@@ -361,8 +373,9 @@ class MAAFAgent(Node):
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active,
-            dtype=float
         )
+
+        self.current_bids_b = self.current_bids_b.astype(float)
 
         """
         Current bids priority matrix beta of size N_t x N_u:
@@ -408,6 +421,17 @@ class MAAFAgent(Node):
         Setup additional method-dependent allocation states for the agents
         """
         pass
+
+    def reset_allocation_states(self) -> None:
+        """
+        Reset allocation states for the agents
+        """
+        # -> Reset fleet and task log
+        self.__setup_fleet_and_task_log()
+
+        # -> Reset allocation states
+        self.__setup_allocation_base_states()
+        self.__setup_allocation_additional_states()
 
     # ============================================================== PROPERTIES
     # ---------------- Generic
@@ -512,7 +536,7 @@ class MAAFAgent(Node):
     # TODO: Cleanup
     def env_callback(self, msg: TeamCommStamped):
         if self.env is None:
-            self.get_logger().info(f"         > Received environment update")
+            # self.get_logger().info(f"         > Received environment update")
             data = loads(msg.memo)
             self.env = {
                 "graph": nx.node_link_graph(data["graph"]),
@@ -551,6 +575,9 @@ class MAAFAgent(Node):
 
         # > Timestamp
         self.agent.state.timestamp = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
+
+        # self.get_logger().info(f"         < Received state update")
+        # self.get_logger().info(f"{pformat(self.agent.state.to_dict())}")
 
     def fleet_msg_update_timer_callback(self) -> None:
         """
@@ -686,12 +713,16 @@ class MAAFAgent(Node):
         msg.target = task_id
 
         msg.meta_action = meta_action
-        msg.memo = dumps(self.task_log[task_id].to_dict())
+
+        # msg.memo = dumps(self.task_log[task_id].to_dict())    # TODO: Cleanup
+        memo = self.task_log[task_id].to_dict()
+        memo["cost"] = self.local_bids_c.loc[task_id, self.id]
+        msg.memo = dumps(memo)
 
         # -> Publish message
         self.goal_sequence_publisher.publish(msg)
 
-        self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
+        # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
     # ---------------- tools
     @staticmethod

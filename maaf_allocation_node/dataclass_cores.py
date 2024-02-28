@@ -76,8 +76,15 @@ class maaf_list_dataclass:
         if isinstance(item, str) or isinstance(item, int):
             item = self[item]
 
+        # -> If item is an item object, find the item with the given ID
+        else:
+            item = self[item.id]
+
+        if item is None:
+            return None
+
         # If the item does not exist, warn the user
-        if item not in self.items:
+        if item.id not in self.ids:
             if DEBUG:
                 if not isinstance(item, self.item_class):
                     print(f"!!! Update item fields failed (1): {self.item_class} with id '{item}' does not exist in the item log ({self.ids})!!!")
