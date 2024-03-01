@@ -59,6 +59,8 @@ class maaf_allocation_node(MAAFAgent):
         # -----------------------------------  Confirm initialisation
         self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
 
+        self.publish_allocation_state_msg()
+
     # ============================================================== PROPERTIES
     def __setup_allocation_additional_states(self) -> None:
         """
@@ -116,10 +118,6 @@ class maaf_allocation_node(MAAFAgent):
         # -> Ensure id is a string
         task_dict["id"] = str(task_dict["id"])
 
-        # TODO: Remove this line once task creation handles stamp creation
-        task_dict["creation_timestamp"] = self.current_timestamp
-        task_dict["termination_source_id"] = None
-
         # -> Create task object
         task = Task.from_dict(task_dict)
 
@@ -129,11 +127,15 @@ class maaf_allocation_node(MAAFAgent):
             if task.id in self.task_log.ids:
                 return
 
+            # TODO: Remove this line once task creation handles stamp creation
+            task_dict["creation_timestamp"] = self.current_timestamp
+
         elif task_msg.meta_action == "completed":
             task_dict["termination_timestamp"] = self.current_timestamp
             # TODO: Finish implementing task completion
 
         elif task_msg.meta_action == "cancelled":
+            task_dict["termination_timestamp"] = self.current_timestamp
             # TODO: Implement task cancel
             pass
 

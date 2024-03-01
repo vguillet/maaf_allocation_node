@@ -44,8 +44,6 @@ def graph_weighted_manhattan_distance_bid(
             } for agent in agent_lst
         ]
 
-    # logger.info(f"Calculating weighted Manhattan distance for task {task.id}")
-
     bids = []
 
     # -> Check the agents skillset against the task instructions

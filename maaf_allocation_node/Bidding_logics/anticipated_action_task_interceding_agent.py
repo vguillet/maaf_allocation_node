@@ -36,6 +36,17 @@ def anticipated_action_task_interceding_agent(
     if task.type == "GOTO":
         return []
 
+    if environment is None:
+        # -> Return 0 bids for all agents as the environment is not available
+        logger.warning("!!!!!! WARNING: Environment not available")
+        return [
+            {
+            "agent_id": agent.id,
+            "bid": 0,
+            "allocation": 0
+            } for agent in agent_lst
+        ]
+
     bids = []
 
     # -> Check the agents skillset against the task instructions
@@ -60,13 +71,28 @@ def anticipated_action_task_interceding_agent(
 
     # -> Calculate the weighted Manhattan distance for all valid agents
     for agent in valid_agents:
+        # -> Agent node
+        agent_node = (agent.state.x, agent.state.y)
+
+        # -> Task node
+        task_node = (task.instructions["x"], task.instructions["y"])
+
+        # -> Find the weigthed Manhattan distance between the agent and the task
+        path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+        # -> Calculate the total distance
+        total_distance = random.uniform(00.00000000001, 0.1)
+        for i in range(len(path) - 1):
+            total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
+
+        # -> Add 100 to the bid to magnify it
+        total_distance += 100
+
         # -> Add bid to the list
         bids.append({
             "agent_id": agent.id,
-            "bid": 100 + random.uniform(00.00000000001, 0.1),
+            "bid": 1/total_distance,
             "allocation": 0
         })
-
-    # logger.info(f"Bids calculated: {bids}")
 
     return bids

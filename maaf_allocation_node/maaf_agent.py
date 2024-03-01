@@ -216,8 +216,14 @@ class MAAFAgent(Node):
         # ---------- /fleet/fleet_msgs
         qos_fleet_msgs = QoSProfile(
             reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
+            history=QoSHistoryPolicy.KEEP_ALL
         )
+
+        # qos_fleet_msgs = QoSProfile(
+        #     reliability=QoSReliabilityPolicy.BEST_EFFORT,
+        #     history=QoSHistoryPolicy.KEEP_LAST,
+        #     depth=1
+        # )
 
         # ----------------------------------- Subscribers
         if RUN_MODE == OPERATIONAL:

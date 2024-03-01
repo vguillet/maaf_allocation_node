@@ -27,6 +27,16 @@ class maaf_list_dataclass:
         """
         return [item.id for item in self.items]
 
+    # ============================================================== Sort
+    def sort(self, key: callable = None, reverse: bool = False) -> None:
+        """
+        Sort the items in the item log.
+
+        :param key: The key to sort the items by.
+        :param reverse: Whether to sort the items in reverse order.
+        """
+        self.items.sort(key=key, reverse=reverse)
+
     # ============================================================== Get
     def __len__(self) -> int:
         """
