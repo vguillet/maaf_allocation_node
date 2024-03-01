@@ -9,7 +9,7 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 import os
 from random import randint
 from json import dumps, loads
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from copy import deepcopy
 from datetime import datetime
 from pprint import pprint, pformat
@@ -45,7 +45,7 @@ class maaf_allocation_node(MAAFAgent):
         MAAFAgent.__init__(
             self,
             node_name="CBAAwI_allocation_node",
-            skillset=["GOTO"]
+            skillset=None
         )
 
         # -----------------------------------  Agent allocation states
@@ -53,7 +53,8 @@ class maaf_allocation_node(MAAFAgent):
         self.__setup_allocation_additional_states()
 
         # -> Initialise previous state hash
-        self.__prev_state_hash_dict = deepcopy(self.state_hash_dict)
+        self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
+        print("________________________", self.prev_state_hash_dict)
 
         # -----------------------------------  Confirm initialisation
         self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
@@ -80,152 +81,21 @@ class maaf_allocation_node(MAAFAgent):
     # ============================================================== PROPERTIES
     # ---------------- Self state
     @property
-    def local_allocation_state_dict(self) -> dict:
+    def local_allocation_state(self) -> dict:
         """
         Local allocation state at current time step (serialised)
 
         :return: dict
         """
         return {
-            "task_list_x": self.task_list_x.to_dict(),
-            "local_bids_c": self.local_bids_c.to_dict(),
-            "local_allocations_d": self.local_allocations_d.to_dict()
+            "task_list_x": self.task_list_x,
+            "local_bids_c": self.local_bids_c,
+            "local_allocations_d": self.local_allocations_d
         }
-
-    # >>>> Change tracking
-    @property
-    def allocation_state_change(self) -> bool:
-        """
-        Check if the shared allocation state has changed
-
-        :return: bool
-        """
-        # -> Compare hash of current state with hash of previous state
-        for key, value in self.state_hash_dict.items():
-            # -> If any value has changed, return True
-            if value != self.__prev_state_hash_dict[key]:
-                return True
-
-        # -> If no value has changed, return False
-        return False
-
-    @property
-    def state_hash_dict(self) -> dict:
-        """
-        Hash of the agent state
-
-        :return: dict
-        """
-        # -> Convert to series and dataframe to immutable hashable objects
-        immutable_state = {}
-
-        for key, value in self.state.items():
-            if isinstance(value, pd.Series):
-                immutable_state[key] = hash(str(value.to_string()))
-            elif isinstance(value, pd.DataFrame):
-                immutable_state[key] = hash(str(value.to_string()))
-            else:
-                immutable_state[key] = hash(str(value))
-
-        return immutable_state
 
     # ============================================================== METHODS
     # ---------------- Callbacks
     # >>>> Base
-    def bid_subscriber_callback(self, bid_msg: Bid) -> None:
-        """
-        Callback for the bid subscriber
-
-        :param bid_msg: Bid message
-        """
-
-        self.get_logger().info(f"{self.id} < Received bid: \n    Task id: {bid_msg.task_id}\n    Agent id: {bid_msg.target_agent_id}\n    Value: {bid_msg.value}\n    Priority: {bid_msg.priority}")
-
-        # -> Check if bid is for a task the agent is aware of
-        if bid_msg.task_id not in self.task_log.ids:
-            self.get_logger().info(f"!!! WARNING: Received bid for task {bid_msg.task_id} not in task log")
-            return
-        # -> Check if bid is for an agent the agent is aware of
-        elif bid_msg.target_agent_id not in self.fleet.ids_active:
-            self.get_logger().info(f"!!! WARNING: Received bid for agent {bid_msg.target_agent_id} not in fleet")
-            return
-
-        # -> Priority merge received bid into current bids b
-        tasks_value_x_ij_updated, current_bids_b_ij_updated, current_bids_priority_beta_ij_updated = (
-            self.priority_merge(
-                # Logging
-                task_id=bid_msg.task_id,
-                agent_id=bid_msg.target_agent_id,
-
-                # Merging
-                matrix_updated_ij=self.current_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
-                matrix_source_ij=bid_msg.value,
-                priority_updated_ij=self.current_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
-                priority_source_ij=bid_msg.priority,
-
-                # Reset
-                tasks_value_x_ij=self.task_list_x.loc[bid_msg.task_id, "task_list_x"],
-                reset=True
-            )
-        )
-
-        # > Update local states
-        self.current_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id] = current_bids_b_ij_updated
-        self.current_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id] = current_bids_priority_beta_ij_updated
-        self.task_list_x.loc[bid_msg.task_id, "task_list_x"] = tasks_value_x_ij_updated
-
-        # -> Select task
-        self.select_task()
-
-    def allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
-        """
-        Callback for the allocation subscriber
-
-        :param allocation_msg: Allocation message
-        """
-
-        self.get_logger().info(f"{self.id} < Received allocation: \n    Task id: {allocation_msg.task_id}\n    Agent id: {allocation_msg.target_agent_id}\n    Action: {allocation_msg.action}\n    Priority: {allocation_msg.priority}")
-
-        # -> Check if bid is for a task the agent is aware of
-        if allocation_msg.task_id not in self.task_log.ids:
-            self.get_logger().info(f"!!! WARNING: Received allocation for task {allocation_msg.task_id} not in task log")
-            return
-        # -> Check if bid is for an agent the agent is aware of
-        elif allocation_msg.target_agent_id not in self.fleet.ids_active:
-            self.get_logger().info(f"!!! WARNING: Received allocation for agent {allocation_msg.target_agent_id} not in fleet")
-            return
-
-        # -> Convert allocation action to
-        allocation_state = self.action_to_allocation_state(action=allocation_msg.action)
-
-        if allocation_state is not None:
-            # -> Merge received allocation into current allocation
-            tasks_value_x_ij_updated, current_allocations_a_ij_updated, current_allocations_priority_alpha_ij_updated = (
-                self.priority_merge(
-                    # Logging
-                    task_id=allocation_msg.task_id,
-                    agent_id=allocation_msg.target_agent_id,
-
-                    # Merging
-                    matrix_updated_ij=self.current_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-                    matrix_source_ij=allocation_state,
-                    priority_updated_ij=self.current_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-                    priority_source_ij=allocation_msg.priority,
-
-                    # Reset
-                    tasks_value_x_ij=self.task_list_x.loc[allocation_msg.task_id, "task_list_x"],
-                    reset=True
-                )
-            )
-
-            # > Update local states
-            self.current_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id] = current_allocations_a_ij_updated
-            self.current_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id] = current_allocations_priority_alpha_ij_updated
-            self.task_list_x.loc[allocation_msg.task_id, "task_list_x"] = tasks_value_x_ij_updated
-
-            # -> Select task
-            self.select_task()
-
     def task_msg_subscriber_callback(self, task_msg) -> None:
         """
         Callback for task messages: create new task, add to local tasks and update local states, and select new task
@@ -248,6 +118,7 @@ class maaf_allocation_node(MAAFAgent):
 
         # TODO: Remove this line once task creation handles stamp creation
         task_dict["creation_timestamp"] = self.current_timestamp
+        task_dict["termination_source_id"] = None
 
         # -> Create task object
         task = Task.from_dict(task_dict)
@@ -258,12 +129,8 @@ class maaf_allocation_node(MAAFAgent):
             if task.id in self.task_log.ids:
                 return
 
-            self.get_logger().info(f"{self.id}   Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
-
         elif task_msg.meta_action == "completed":
             task_dict["termination_timestamp"] = self.current_timestamp
-
-            self.get_logger().info(f"{self.id}   Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)-1}")
             # TODO: Finish implementing task completion
 
         elif task_msg.meta_action == "cancelled":
@@ -274,13 +141,22 @@ class maaf_allocation_node(MAAFAgent):
         self.__update_situation_awareness(task_list=[task], fleet=None)
 
         # -> Select task
-        self.select_task()
+        self.update_allocation()
 
         # -> Update previous state hash
-        self.__prev_state_hash_dict = deepcopy(self.state_hash_dict)
+        self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
 
         # -> Publish allocation state to the fleet to share the new task
         self.publish_allocation_state_msg()
+
+        if task_msg.meta_action == "pending":
+            self.get_logger().info(f"{self.id}   Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
+
+        elif task_msg.meta_action == "completed":
+            self.get_logger().info(f"{self.id}   Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)}")
+
+        elif task_msg.meta_action == "cancelled":
+            self.get_logger().info(f"{self.id}   Task {task.id} cancelled - Pending task count: {len(self.task_log.ids_pending)}")
 
     def team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -289,6 +165,10 @@ class maaf_allocation_node(MAAFAgent):
         :param team_msg: TeamComm message
         """
         # ---- Unpack msg
+        # -> Ignore self messages
+        if team_msg.source == self.id:
+            return
+
         # -> Check if the message is for the agent
         msg_target = team_msg.target
 
@@ -315,10 +195,10 @@ class maaf_allocation_node(MAAFAgent):
 
         # -> Update shared states
         self.__update_shared_states(
-            received_current_bids_b=received_allocation_state["current_bids_b"],
-            received_current_bids_priority_beta=received_allocation_state["current_bids_priority_beta"],
-            received_current_allocations_a=received_allocation_state["current_allocations_a"],
-            received_current_allocations_priority_alpha=received_allocation_state["current_allocations_priority_alpha"]
+            received_shared_bids_b=received_allocation_state["shared_bids_b"],
+            received_shared_bids_priority_beta=received_allocation_state["shared_bids_priority_beta"],
+            received_shared_allocations_a=received_allocation_state["shared_allocations_a"],
+            received_shared_allocations_priority_alpha=received_allocation_state["shared_allocations_priority_alpha"]
         )
 
         # -> Update the task in the task list x the agent is assigned to
@@ -335,15 +215,11 @@ class maaf_allocation_node(MAAFAgent):
                 )
 
         # -> Select new task
-        self.select_task()
+        self.update_allocation()
 
         # -> If state has changed, update local states (only publish when necessary)
-        if self.allocation_state_change:
-            # -> Update previous state hash
-            self.__prev_state_hash_dict = deepcopy(self.state_hash_dict)
-
-            # -> Publish allocation state to the fleet
-            self.publish_allocation_state_msg()
+        if self.state_change:
+            self.check_publish_state_change()
 
         else:
             # -> Check if the agent should rebroadcast the message
@@ -368,18 +244,21 @@ class maaf_allocation_node(MAAFAgent):
             self.fleet.add_agent(agent=agent)
 
             # -> Add a column to all relevant allocation lists and matrices with new agent
-            agent_id = agent.id
+            state = self.get_state(
+                state_awareness=False,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
 
-            # > Local
-            self.local_bids_c[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
-            self.local_allocations_d[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+            # > Remove task_list_x from the state (not needed for this operation)
+            state.pop("task_list_x")
 
-            # > Shared
-            self.current_bids_b[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
-            self.current_bids_priority_beta[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+            # > Remove winning_bids_y from the state (not needed for this operation)
+            state.pop("winning_bids_y")
 
-            self.current_allocations_a[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
-            self.current_allocations_priority_alpha[agent_id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+            for matrix in state.values():
+                matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
 
         def remove_agent(agent: Agent) -> None:
             """
@@ -392,19 +271,19 @@ class maaf_allocation_node(MAAFAgent):
             # TODO: Figure out how to deal with removing bids from the winning bid matrix (full reset vs bid owner tracking). For now, reset winning bids matrix (full reset)
             self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
 
-            # -> Remove agent from all relevant allocation lists and matrices
-            agent_id = agent.id
+            # -> Remove agent from all allocation lists and matrices
+            state = self.get_state(
+                state_awareness=False,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
 
-            # > Local
-            self.local_bids_c.drop(columns=agent_id, inplace=True)
-            self.local_allocations_d.drop(columns=agent_id, inplace=True)
-
-            # > Shared
-            self.current_bids_b.drop(columns=agent_id, inplace=True)
-            self.current_bids_priority_beta.drop(columns=agent_id, inplace=True)
-
-            self.current_allocations_a.drop(columns=agent_id, inplace=True)
-            self.current_allocations_priority_alpha.drop(columns=agent_id, inplace=True)
+            for matrix in state.values():
+                try:
+                    matrix.drop(columns=agent.id, inplace=True)
+                except KeyError:
+                    pass
 
         def add_task(task: Task) -> None:
             """
@@ -414,29 +293,34 @@ class maaf_allocation_node(MAAFAgent):
             self.task_log.add_task(task=task)
 
             # -> Add a row to all allocation lists and matrices with new task
-            task_id = task.id
-            
-            # > Local
-            self.task_list_x.loc[task_id] = 0
-            self.local_bids_c.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
-            self.local_allocations_d.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
+            state = self.get_state(
+                state_awareness=False,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
 
-            # > Shared
-            self.winning_bids_y.loc[task_id] = 0
+            # > Remove task_list_x from the state (operation performed separately)
+            state.pop("task_list_x")
+            self.task_list_x.loc[task.id] = 0
 
-            self.current_bids_b.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
-            self.current_bids_priority_beta.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
+            # > Remove winning_bids_y from the state (operation performed separately)
+            state.pop("winning_bids_y")
+            self.winning_bids_y.loc[task.id] = 0
 
-            self.current_allocations_a.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
-            self.current_allocations_priority_alpha.loc[task_id] = pd.Series(np.zeros(self.Agent_count_N_u),
-                                                                             index=self.fleet.ids_active)
+            for matrix in state.values():
+                matrix.loc[task.id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
 
             # -> Estimate bid(s) for new task
-            task_bids = self.bid(task=self.task_log[task_id], agent_lst=[self.agent])
+            task_bids = self.bid(task=self.task_log[task.id], agent_lst=[self.agent])
 
             # -> Store bids to local bids matrix
             for bid in task_bids:
-                self.local_bids_c.loc[task_id, bid["agent_id"]] = bid["bid"]
+                # > Bid
+                self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+
+                # > Allocation
+                self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
         def terminate_task(task: Task) -> None:
             # -> Update task log
@@ -449,21 +333,18 @@ class maaf_allocation_node(MAAFAgent):
             )
             
             # -> Remove task from all allocation lists and matrices
-            # > Local
-            self.task_list_x.drop(index=task.id, inplace=True)
-            self.local_bids_c.drop(index=task.id, inplace=True)
-            self.local_allocations_d.drop(index=task.id, inplace=True)
+            state = self.get_state(
+                state_awareness=False,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
 
-            # > Shared
-            self.winning_bids_y.drop(index=task.id, inplace=True)
-
-            self.current_bids_b.drop(index=task.id, inplace=True)
-            self.current_bids_priority_beta.drop(index=task.id, inplace=True)
-
-            self.current_allocations_a.drop(index=task.id, inplace=True)
-            self.current_allocations_priority_alpha.drop(index=task.id, inplace=True)
-
-        # self.print_state()
+            for matrix in state.values():
+                try:
+                    matrix.drop(index=task.id, inplace=True)
+                except KeyError:
+                    pass
 
         # ---- Add new tasks and agents
         # -> Update local fleet
@@ -508,22 +389,22 @@ class maaf_allocation_node(MAAFAgent):
 
     def __update_shared_states(
             self,
-            received_current_bids_b,
-            received_current_bids_priority_beta,
-            received_current_allocations_a,
-            received_current_allocations_priority_alpha
+            received_shared_bids_b,
+            received_shared_bids_priority_beta,
+            received_shared_allocations_a,
+            received_shared_allocations_priority_alpha
     ):
         """
         Update local states with received states from the fleet
 
-        :param received_current_bids_b: Task bids matrix b received from the fleet
-        :param received_current_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param received_current_allocations_a: Task allocations matrix a received from the fleet
-        :param received_current_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
+        :param received_shared_bids_b: Task bids matrix b received from the fleet
+        :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
+        :param received_shared_allocations_a: Task allocations matrix a received from the fleet
+        :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
 
-        received_tasks_ids = list(received_current_bids_b.index)
-        received_agent_ids = list(received_current_bids_b.columns)
+        received_tasks_ids = list(received_shared_bids_b.index)
+        received_agent_ids = list(received_shared_bids_b.columns)
 
         # -> For each task ...
         for task_id in received_tasks_ids:
@@ -539,17 +420,17 @@ class maaf_allocation_node(MAAFAgent):
 
                 # -> Priority merge with reset received current bids b into local current bids b
                 # > Determine correct matrix values
-                tasks_value_x_ij_updated, current_bids_b_ij_updated, current_bids_priority_beta_ij_updated = (
-                    self.priority_merge(
+                tasks_value_x_ij_updated, shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = (
+                    self.CBAA_priority_merge(
                         # Logging
                         task_id=task_id,
                         agent_id=agent_id,
 
                         # Merging
-                        matrix_updated_ij=self.current_bids_b.loc[task_id, agent_id],
-                        matrix_source_ij=received_current_bids_b.loc[task_id, agent_id],
-                        priority_updated_ij=self.current_bids_priority_beta.loc[task_id, agent_id],
-                        priority_source_ij=received_current_bids_priority_beta.loc[task_id, agent_id],
+                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
+                        matrix_source_ij=received_shared_bids_b.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                        priority_source_ij=received_shared_bids_priority_beta.loc[task_id, agent_id],
 
                         # Reset
                         tasks_value_x_ij=self.task_list_x.loc[task_id, "task_list_x"],
@@ -558,23 +439,23 @@ class maaf_allocation_node(MAAFAgent):
                 )
 
                 # > Update local states
-                self.current_bids_b.loc[task_id, agent_id] = current_bids_b_ij_updated
-                self.current_bids_priority_beta.loc[task_id, agent_id] = current_bids_priority_beta_ij_updated
+                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
                 self.task_list_x.loc[task_id, "task_list_x"] = tasks_value_x_ij_updated
 
                 # -> Priority merge received current allocations a into local current allocations a
                 # > Determine correct matrix values
-                tasks_value_x_ij_updated, current_allocations_a_ij_updated, current_allocations_priority_alpha_ij_updated = (
-                    self.priority_merge(
+                tasks_value_x_ij_updated, shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = (
+                    self.CBAA_priority_merge(
                         # Logging
                         task_id=task_id,
                         agent_id=agent_id,
 
                         # Merging
-                        matrix_updated_ij=self.current_allocations_a.loc[task_id, agent_id],
-                        matrix_source_ij=received_current_allocations_a.loc[task_id, agent_id],
-                        priority_updated_ij=self.current_allocations_priority_alpha.loc[task_id, agent_id],
-                        priority_source_ij=received_current_allocations_priority_alpha.loc[task_id, agent_id],
+                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
+                        matrix_source_ij=received_shared_allocations_a.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
+                        priority_source_ij=received_shared_allocations_priority_alpha.loc[task_id, agent_id],
 
                         # Reset
                         tasks_value_x_ij=self.task_list_x.loc[task_id, "task_list_x"],
@@ -583,8 +464,8 @@ class maaf_allocation_node(MAAFAgent):
                 )
 
                 # > Update local states
-                self.current_allocations_a.loc[task_id, agent_id] = current_allocations_a_ij_updated
-                self.current_allocations_priority_alpha.loc[task_id, agent_id] = current_allocations_priority_alpha_ij_updated
+                self.shared_allocations_a.loc[task_id, agent_id] = shared_allocations_a_ij_updated
+                self.shared_allocations_priority_alpha.loc[task_id, agent_id] = shared_allocations_priority_alpha_ij_updated
                 self.task_list_x.loc[task_id, "task_list_x"] = tasks_value_x_ij_updated
 
     def __update_task(
@@ -601,13 +482,13 @@ class maaf_allocation_node(MAAFAgent):
 
         # -> Create set of agents with imposed allocations
         agents_with_imposed_allocations = set(
-            self.current_allocations_a.loc[task_id, self.current_allocations_a.loc[task_id] == 1].index.to_list()
+            self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index.to_list()
         )
 
         # -> If there are imposed allocations, find the imposed allocation with the highest priority
         if len(agents_with_imposed_allocations) > 0:
             # -> Find agent with the highest priority
-            winning_agent = self.current_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
+            winning_agent = self.shared_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
 
         else:
             # -> Compare received winning bids with local winning bids
@@ -627,7 +508,7 @@ class maaf_allocation_node(MAAFAgent):
 
     # ---------------- Processes
     # >>>> CBAA
-    def select_task(self):
+    def update_allocation(self):
         """
         Select a task to bid for based on the current state
         1. Merge local states with shared states and update local states if necessary
@@ -635,22 +516,23 @@ class maaf_allocation_node(MAAFAgent):
         """
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
-        if self.allocation_state_change:
+
+        if self.state_change:
             # > For each task ...
             for task_id in self.task_log.ids_pending:
                 # > For each agent ...
                 for agent_id in self.fleet.ids_active:
                     # -> Priority merge local bids c into current bids b
                     # > Determine correct matrix values
-                    _, current_bids_b_ij_updated, current_bids_priority_beta_ij_updated = self.priority_merge(
+                    _, shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.CBAA_priority_merge(
                         # Logging
                         task_id=task_id,
                         agent_id=agent_id,
 
                         # Merging
-                        matrix_updated_ij=self.current_bids_b.loc[task_id, agent_id],
+                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
                         matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
-                        priority_updated_ij=self.current_bids_priority_beta.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
                         priority_source_ij=self.hierarchy_level,
 
                         # Reset
@@ -659,17 +541,17 @@ class maaf_allocation_node(MAAFAgent):
                     )
 
                     # > Update local states
-                    self.current_bids_b.loc[task_id, agent_id] = current_bids_b_ij_updated
-                    self.current_bids_priority_beta.loc[task_id, agent_id] = current_bids_priority_beta_ij_updated
+                    self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                    self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
 
                     # -> Merge local intercessions into allocation intercession
-                    if self.hierarchy_level > self.current_allocations_priority_alpha.loc[task_id, agent_id]:
+                    if self.hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
                         allocation_state = self.action_to_allocation_state(
                             action=self.local_allocations_d.loc[task_id, agent_id]
                         )
 
                         if allocation_state is not None:
-                            self.current_allocations_a.loc[task_id, agent_id] = allocation_state
+                            self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
 
         # ---- Select task
         # -> If no task is assigned to self, select a task
@@ -684,12 +566,12 @@ class maaf_allocation_node(MAAFAgent):
             # > For each task ...
             for task_id in self.task_log.ids_pending:
                 # -> Create set of agents with imposed allocations
-                agents_with_imposed_allocations = list(set(self.current_allocations_a.loc[task_id, self.current_allocations_a.loc[task_id] == 1].index))
+                agents_with_imposed_allocations = list(set(self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index))
 
                 # -> If there are imposed allocations, check if self is imposed allocation with the highest priority
                 if len(agents_with_imposed_allocations) > 0:
                     # -> Find agent with the highest priority
-                    winning_agent = self.current_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
+                    winning_agent = self.shared_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
 
                     # TODO: Adjust to handle conflicting imposed allocations. For now assumed that allocation intercession is conflict-free
 
@@ -698,7 +580,7 @@ class maaf_allocation_node(MAAFAgent):
                         valid_tasks_list_h[task_id, "valid_tasks_list_h"] = 1
                 else:
                     # -> If there are no imposed allocations, check if self has the highest bid and is not blacklisted
-                    valid_task = int(self.current_allocations_a.loc[task_id, self.id] != -1 and self.current_bids_b.loc[task_id, self.id] > self.winning_bids_y.loc[task_id, "winning_bids_y"])
+                    valid_task = int(self.shared_allocations_a.loc[task_id, self.id] != -1 and self.shared_bids_b.loc[task_id, self.id] > self.winning_bids_y.loc[task_id, "winning_bids_y"])
 
                     valid_tasks_list_h.loc[task_id, "valid_tasks_list_h"] = valid_task
 
@@ -709,15 +591,15 @@ class maaf_allocation_node(MAAFAgent):
                 valid_tasks = valid_tasks_list_h[valid_tasks_list_h["valid_tasks_list_h"] == 1].index.to_list()
 
                 # > Get valid task with largest bid
-                selected_task = self.current_bids_b.loc[valid_tasks, self.id].idxmax()
+                selected_task = self.shared_bids_b.loc[valid_tasks, self.id].idxmax()
 
                 # -> Add task to the task list
                 self.task_list_x.loc[selected_task, "task_list_x"] = 1
 
                 # -> Update winning bids
-                self.winning_bids_y.loc[selected_task, "winning_bids_y"] = self.current_bids_b.loc[selected_task, self.id]
+                self.winning_bids_y.loc[selected_task, "winning_bids_y"] = self.shared_bids_b.loc[selected_task, self.id]
 
-                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.current_bids_b.loc[valid_tasks, self.id].max(), 3)} - Pending task count: {len(self.task_log.ids_pending)-1})")
+                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 3)} - Pending task count: {len(self.task_log.ids_pending)})")
 
                 # -> Assign goal
                 self.publish_goal_msg(task_id=selected_task, meta_action="assign")
@@ -764,17 +646,17 @@ class maaf_allocation_node(MAAFAgent):
 
             print("\n------------")
             print("Current bids b:")
-            print(self.current_bids_b)
+            print(self.shared_bids_b)
 
             # print("\nCurrent bids priority beta:")
-            # print(self.current_bids_priority_beta)
+            # print(self.shared_bids_priority_beta)
             #
             # print("\n------------")
             # print("Current allocations a:")
-            # print(self.current_allocations_a)
+            # print(self.shared_allocations_a)
             #
             # print("\nCurrent allocations priority alpha:")
-            # print(self.current_allocations_priority_alpha)
+            # print(self.shared_allocations_priority_alpha)
 
         print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
@@ -782,12 +664,85 @@ class maaf_allocation_node(MAAFAgent):
     # >>>> CBAA
     def priority_merge(
             self,
+            task_id: str, 
+            agent_id: str,
+            
+            # -> Updated matrix
+            # > Updated matrix value
+            matrix_updated: pd.DataFrame,
+            matrix_updated_ij: float,
+            
+            # > Updated priority value
+            matrix_priority_updated: pd.DataFrame,
+            priority_updated_ij: float,
+            
+            # -> Source matrix
+            # > Source matrix value
+            matrix_source: Optional[pd.DataFrame],
+            matrix_source_ij: float,
+            
+            # > Source priority value
+            matrix_priority_source: Optional[pd.DataFrame],
+            priority_source_ij: float,
+            
+            reset: bool = False
+        ) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """ 
+        Wrapper for CBAA_priority_merge to be used by the agent class
+        
+        :param task_id: Task id
+        :param agent_id: Agent id
+        :param matrix_updated: Updated matrix
+        :param matrix_updated_ij: Updated matrix value
+        :param matrix_priority_updated: Updated priority value
+        :param priority_updated_ij: Updated priority value
+        :param matrix_source: Source matrix
+        :param matrix_source_ij: Source matrix value
+        :param matrix_priority_source: Source priority value
+        :param priority_source_ij: Source priority value
+        :param reset: Flag to reset task value to zero if source priority is higher
+        
+        :return: Updated matrix, updated priority
+        """
+        
+        # -> Priority merge received bid into current bids b
+        tasks_value_x_ij, matrix_updated_ij, priority_updated_ij = self.CBAA_priority_merge(
+                # Logging
+                task_id=task_id,
+                agent_id=agent_id,
+
+                # Merging
+                matrix_updated_ij=matrix_updated_ij,
+                priority_updated_ij=priority_updated_ij,
+                
+                matrix_source_ij=matrix_source_ij,
+                priority_source_ij=priority_source_ij,
+
+                # Reset
+                tasks_value_x_ij=self.task_list_x.loc[task_id, "task_list_x"],
+                reset=True
+            )
+        
+        # -> Update local x state
+        self.task_list_x.loc[task_id, "task_list_x"] = tasks_value_x_ij
+        
+        # -> Update local states
+        matrix_updated.loc[task_id, agent_id] = matrix_updated_ij
+        matrix_priority_updated.loc[task_id, agent_id] = priority_updated_ij
+        
+        return matrix_updated, matrix_priority_updated
+        
+    def CBAA_priority_merge(
+            self,
             task_id: str,
             agent_id: str,
+            
             matrix_updated_ij: float,
-            matrix_source_ij: float,
             priority_updated_ij: float,
+
+            matrix_source_ij: float,            
             priority_source_ij: float,
+            
             tasks_value_x_ij: int or None = None,
             reset: bool = False
             ):
@@ -827,7 +782,7 @@ class maaf_allocation_node(MAAFAgent):
             # -> Reset task value to zero to remove allocation
             if reset:
                 if tasks_value_x_ij == 1:
-                    self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list - Pending task count: {len(self.task_log.ids_pending)-1}")
+                    self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list - Pending task count: {len(self.task_log.ids_pending)}")
 
                     tasks_value_x_ij = 0
 
@@ -854,6 +809,7 @@ def main(args=None):
 
     path_sequence = maaf_allocation_node()
 
+    # -> Spin fast
     rclpy.spin(path_sequence)
 
     path_sequence.destroy_node()

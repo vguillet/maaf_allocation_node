@@ -8,7 +8,7 @@ from launch import LaunchContext
 def generate_launch_description():
     nodes = []
 
-    for i in range(3):
+    for i in range(5):
         ref = "Operator" if i == 0 else f"Turtle_{i}"
 
         nodes.append(

@@ -25,6 +25,7 @@ class Task:
     # > Task status
     creation_timestamp: float
     termination_timestamp: Optional[datetime] = None
+    termination_source_id: Optional[str] = None
     status: str = "pending"     # pending, completed, cancelled
 
     # name: str = ""

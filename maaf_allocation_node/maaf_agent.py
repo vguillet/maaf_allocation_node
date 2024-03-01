@@ -24,12 +24,18 @@ from abc import abstractmethod
 from typing import List, Optional
 from datetime import datetime, timedelta
 from random import randint
-import numpy as np
-import pandas as pd
 from json import dumps, loads
 from pprint import pprint, pformat
+import warnings
+from copy import deepcopy
 
 # Libs
+import numpy as np
+import pandas as pd
+
+# Suppress FutureWarning messages
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 # ROS2 Imports
 import rclpy
 from rclpy.node import Node
@@ -55,7 +61,7 @@ from .tools import *
 
 from .Bidding_logics.random_bid import random_bid
 from .Bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
-
+from .Bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
 
 ##################################################################################################################
 
@@ -66,7 +72,8 @@ class MAAFAgent(Node):
             node_name: str,
             id: str = None,
             name: str = None,
-            skillset: List[str] = None
+            skillset: List[str] = None,
+            bid_estimator = None
         ):
         """
         maaf agent class
@@ -99,14 +106,31 @@ class MAAFAgent(Node):
         self.specs = {}
 
         if skillset is None:
-            self.skillset = self.get_parameter("skillset").get_parameter_value().string_array_value
+            # self.skillset = self.get_parameter("skillset").get_parameter_value().string_array_value
+            # TODO: Cleanup
+            self.skillset = skillsets[self.id]
         else:
             self.skillset = skillset
 
-        # TODO: Implement bid evaluation function selection logic
-        # self.bid_evaluation_function = random_bid
-        self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
+        # ---- Bid evaluation function
+        if bid_estimator is None:
+            self.bid_evaluation_function = None
+        elif bid_estimator is not None:
+            self.bid_evaluation_function = bid_estimator
 
+        # TODO: Cleanup
+        if self.id in bid_function.keys():
+            if bid_function[self.id] == "graph_weighted_manhattan_distance_bid":
+                self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
+            elif bid_function[self.id] == "anticipated_action_task_interceding_agent":
+                self.bid_evaluation_function = anticipated_action_task_interceding_agent
+
+        self.get_logger().info(f"         > Agent {self.id} using: {self.bid_evaluation_function}")
+
+        # ---- Multi-hop behavior
+        self.rebroadcast_received_msgs = False
+
+        # ---- Environment
         self.env = None
 
         # ---- Fleet and task log
@@ -117,6 +141,10 @@ class MAAFAgent(Node):
 
         # ---- Allocation states
         self.__setup_allocation_base_states()
+
+        # -> Initialise previous state hash
+        self.prev_state_hash_dict = None
+        # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
     # ============================================================== INIT
     def __setup_fleet_and_task_log(self) -> None:
@@ -183,33 +211,31 @@ class MAAFAgent(Node):
         Separated from __init__ for readability
         :return: None
         """
+
+        # ----------------------------------- QOS
+        # ---------- /fleet/fleet_msgs
+        qos_fleet_msgs = QoSProfile(
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            history=QoSHistoryPolicy.KEEP_ALL,
+        )
+
         # ----------------------------------- Subscribers
         if RUN_MODE == OPERATIONAL:
             # ---------- /fleet/fleet_msgs
-            qos = QoSProfile(
-                reliability=QoSReliabilityPolicy.RELIABLE,
-                history=QoSHistoryPolicy.KEEP_ALL,
-            )
-
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
                 topic=f"/fleet/fleet_msgs",
                 callback=self.team_msg_subscriber_callback,
-                qos_profile=qos
+                qos_profile=qos_fleet_msgs
             )
 
         elif RUN_MODE == SIM:
             # ---------- /sim/fleet/fleet_msgs_filtered
-            qos = QoSProfile(
-                reliability=QoSReliabilityPolicy.RELIABLE,
-                history=QoSHistoryPolicy.KEEP_ALL,
-            )
-
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
                 topic=f"/sim/fleet/fleet_msgs_filtered",
                 callback=self.team_msg_subscriber_callback,
-                qos_profile=qos
+                qos_profile=qos_fleet_msgs
             )
 
         # ---------- /sim/environment
@@ -226,6 +252,7 @@ class MAAFAgent(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
             history=QoSHistoryPolicy.KEEP_ALL,
         )
+
         self.robot_task_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=f"/fleet/task",
@@ -275,15 +302,10 @@ class MAAFAgent(Node):
 
         # ----------------------------------- Publishers
         # ---------- /fleet/fleet_msgs
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
-        )
-
         self.fleet_msgs_pub = self.create_publisher(
             msg_type=TeamCommStamped,
             topic=f"/fleet/fleet_msgs",
-            qos_profile=qos
+            qos_profile=qos_fleet_msgs
         )
 
         # ---------- /robot_.../goal
@@ -302,15 +324,9 @@ class MAAFAgent(Node):
 
         # ----------------------------------- Timers
         # ---- Fleet msg update timer
-        self.fleet_msg_update_timer = self.create_timer(
-            timer_period_sec=FLEET_MSG_UPDATE_TIMER,
-            callback=self.fleet_msg_update_timer_callback
-        )
-
-        # ---- Auction timer
-        # self.auction_timer = self.create_timer(
-        #     timer_period=timedelta(seconds=0.1),
-        #     callback=self.auction_timer_callback
+        # self.fleet_msg_update_timer = self.create_timer(
+        #     timer_period_sec=FLEET_MSG_UPDATE_TIMER,
+        #     callback=self.fleet_msg_update_timer_callback
         # )
 
     def __setup_allocation_base_states(self) -> None:
@@ -364,52 +380,52 @@ class MAAFAgent(Node):
         self.winning_bids_y = self.winning_bids_y.astype(float)
 
         """
-        Current bids matrix b of size N_t x N_u: 
+        Shared bids matrix b of size N_t x N_u: 
         > highest priority/value bids made across the fleet for each task and each agent
 
         Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
         """
-        self.current_bids_b = pd.DataFrame(
+        self.shared_bids_b = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active,
         )
 
-        self.current_bids_b = self.current_bids_b.astype(float)
+        self.shared_bids_b = self.shared_bids_b.astype(float)
 
         """
-        Current bids priority matrix beta of size N_t x N_u:
-        > priority value corresponding to each bid in current_bids_bi
+        Shared bids priority matrix beta of size N_t x N_u:
+        > priority value corresponding to each bid in shared_bids_bi
 
         Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
         """
-        self.current_bids_priority_beta = pd.DataFrame(
+        self.shared_bids_priority_beta = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active
         )
 
         """
-        Current allocations matrix a of size N_t x N_u:
+        Shared allocations matrix a of size N_t x N_u:
         - -1: blacklisted
         - 0: not allocated (free allocation)
         - 1: allocated (imposed allocation)
 
         Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
         """
-        self.current_allocations_a = pd.DataFrame(
+        self.shared_allocations_a = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active
         )
 
         """
-        Current allocations priority matrix alpha of size N_t x N_u:
-        > priority value corresponding to each allocation in current_allocations_ai
+        Shared allocations priority matrix alpha of size N_t x N_u:
+        > priority value corresponding to each allocation in shared_allocations_ai
 
         Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
         """
-        self.current_allocations_priority_alpha = pd.DataFrame(
+        self.shared_allocations_priority_alpha = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.task_log.ids_pending,
             columns=self.fleet.ids_active
@@ -469,62 +485,151 @@ class MAAFAgent(Node):
 
     # ============================================================== PROPERTIES
     # ---------------- Self state
-    # >>>> Base
-
-    # >>>> Situation states grouped
+    # >>>> State change tracking
     @property
-    def state(self) -> dict:
+    def state_hash_dict(self) -> dict:
         """
-        Full state of the agent at current time step (not serialised)
-        Mainly used for debugging and logging
+        Hash of the agent allocation state
 
         :return: dict
         """
-        return self.state_awareness_dict | self.local_allocation_state_dict | self.shared_allocation_state_dict
+        # -> Convert to series and dataframe to immutable hashable objects
+        immutable_state = {}
+
+        state = self.get_state(
+            state_awareness=True,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=True
+            )  # TODO: Review if use state or allocation_state
+
+        for key, value in state.items():
+            if isinstance(value, pd.Series):
+                immutable_state[key] = hash(str(value.to_string()))
+            elif isinstance(value, pd.DataFrame):
+                immutable_state[key] = hash(str(value.to_string()))
+            else:
+                immutable_state[key] = hash(str(value))
+
+        return immutable_state
 
     @property
-    def allocation_state(self) -> dict:
+    def state_change(self) -> bool:
         """
-        Allocation state at current time step (not serialised)
-        Used in allocation process
+        Check if the shared allocation state has changed
+
+        :return: bool
+        """
+        # -> Compare hash of current state with hash of previous state
+        for key, value in self.state_hash_dict.items():
+            # -> If any value has changed, return True
+            if value != self.prev_state_hash_dict[key]:
+                return True
+
+        # -> If no value has changed, return False
+        return False
+
+    def check_publish_state_change(self):
+        # -> If state has changed, update local states (only publish when necessary)
+        if self.state_change:
+            # -> Update previous state hash
+            self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
+
+            # -> Publish allocation state to the fleet
+            self.publish_allocation_state_msg()
+
+    # >>>> Base states grouped getter
+    def get_state(self,
+                  state_awareness: bool = False,
+                  local_allocation_state: bool = False,
+                  shared_allocation_state: bool = False,
+                  serialised: bool = False
+                  ):
+        """
+        Main getter for node states. Returns a dict of all requested states, serialised or not
+
+        :param state_awareness: bool, whether to include state awareness
+        :param local_allocation_state: bool, whether to include local allocation state
+        :param shared_allocation_state: bool, whether to include shared allocation state
+        :param serialised: bool, whether to return serialised state or not
 
         :return: dict
         """
 
-        return self.state_awareness_dict | self.shared_allocation_state_dict
+        state = {}
 
+        # !!!!! All states in state awareness must be
+        if state_awareness:
+            if not serialised:
+                state = {**state, **self.state_awareness}
+            else:
+                serialised_state = {}
+
+                for key, value in self.state_awareness.items():
+                    serialised_state[key] = value.to_list()
+
+                state = {**state, **serialised_state}
+
+        if local_allocation_state:
+            if not serialised:
+                state = {**state, **self.local_allocation_state}
+            else:
+                serialised_state = {}
+
+                for key, value in self.local_allocation_state.items():
+                    serialised_state[key] = value.to_dict()
+
+                state = {**state, **serialised_state}
+
+        if shared_allocation_state:
+            if not serialised:
+                state = {**state, **self.shared_allocation_state}
+            else:
+                serialised_state = {}
+
+                for key, value in self.shared_allocation_state.items():
+                    serialised_state[key] = value.to_dict()
+
+                state = {**state, **serialised_state}
+
+        return state
+
+    # >>>> Base states grouped
     @property
-    def state_awareness_dict(self) -> dict:
+    def state_awareness(self) -> dict:
         """
-        State awareness at current time step (serialised)
+        State awareness at current time step (not serialised)
+        !!!! All entries must be maaf_list_dataclasses !!!!
 
         :return: dict
         """
         return {
-            "tasks": self.task_log.to_list(),
-            "fleet": self.fleet.to_list()
+            "tasks": self.task_log,
+            "fleet": self.fleet
         }
-
+    
     @property
-    def shared_allocation_state_dict(self) -> dict:
+    def shared_allocation_state(self):
         """
-        Shared allocation state at current time step (serialised)
+        Shared allocation state at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
 
         :return: dict
         """
         return {
-            "winning_bids_y": self.winning_bids_y.to_dict(),
-            "current_bids_b": self.current_bids_b.to_dict(),
-            "current_bids_priority_beta": self.current_bids_priority_beta.to_dict(),
-            "current_allocations_a": self.current_allocations_a.to_dict(),
-            "current_allocations_priority_alpha": self.current_allocations_priority_alpha.to_dict()
+            "winning_bids_y": self.winning_bids_y,
+            "shared_bids_b": self.shared_bids_b,
+            "shared_bids_priority_beta": self.shared_bids_priority_beta,
+            "shared_allocations_a": self.shared_allocations_a,
+            "shared_allocations_priority_alpha": self.shared_allocations_priority_alpha
         }
 
     @property
     @abstractmethod
-    def local_allocation_state_dict(self) -> dict:
+    def local_allocation_state(self) -> dict:
         """
-        Local allocation state at current time step (serialised)
+        Local allocation state at current time step not (serialised)
+        !!!! All entries must be dataframes !!!!
 
         :return: dict
         """
@@ -533,10 +638,9 @@ class MAAFAgent(Node):
     # ============================================================== METHODS
     # ---------------- Callbacks
     # >>>> Base
-    # TODO: Cleanup
-    def env_callback(self, msg: TeamCommStamped):
-        if self.env is None:
-            # self.get_logger().info(f"         > Received environment update")
+    def env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
+        if self.env is None:    # TODO: Review env management logic
+            self.get_logger().info(f"         > Received environment update")
             data = loads(msg.memo)
             self.env = {
                 "graph": nx.node_link_graph(data["graph"]),
@@ -553,7 +657,11 @@ class MAAFAgent(Node):
 
                 # -> Store bids to local bids matrix
                 for bid in task_bids:
+                    # > Bid
                     self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+
+                    # > Allocation
+                    self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
     def pose_subscriber_callback(self, pose_msg) -> None:
         """
@@ -586,23 +694,110 @@ class MAAFAgent(Node):
         # -> Publish allocation state to the fleet
         self.publish_allocation_state_msg()
 
-    @abstractmethod
     def bid_subscriber_callback(self, bid_msg: Bid) -> None:
         """
         Callback for the bid subscriber
 
         :param bid_msg: Bid message
         """
-        pass
 
-    @abstractmethod
+        self.get_logger().info(f"{self.id} < Received bid: \n    Task id: {bid_msg.task_id}\n    Agent id: {bid_msg.target_agent_id}\n    Value: {bid_msg.value}\n    Priority: {bid_msg.priority}")
+
+        # -> Check if bid is for a task the agent is aware of
+        if bid_msg.task_id not in self.task_log.ids:
+            self.get_logger().info(f"!!! WARNING: Received bid for task {bid_msg.task_id} not in task log")
+            return
+        # -> Check if bid is for an agent the agent is aware of
+        elif bid_msg.target_agent_id not in self.fleet.ids_active:
+            self.get_logger().info(f"!!! WARNING: Received bid for agent {bid_msg.target_agent_id} not in fleet")
+            return
+
+        # -> Priority merge received bid into current bids b
+        self.shared_bids_b, self.shared_bids_priority_beta = self.priority_merge(
+                                task_id=bid_msg.task_id,
+                                agent_id=bid_msg.target_agent_id,
+
+                                # -> Updated matrix
+                                # > Updated matrix value
+                                matrix_updated=self.shared_bids_b,
+                                matrix_updated_ij=self.shared_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
+
+                                # > Updated priority value
+                                matrix_priority_updated=self.shared_bids_priority_beta,
+                                priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
+
+                                # -> Source matrix
+                                # > Source matrix value
+                                matrix_source=None,
+                                matrix_source_ij=bid_msg.value,
+
+                                # > Source priority value
+                                matrix_priority_source=None,
+                                priority_source_ij=bid_msg.priority,
+
+                                reset=True
+                                )
+
+        # -> Update allocation
+        self.update_allocation()
+
+        # -> If state has changed, update local states (only publish when necessary)
+        self.check_publish_state_change()
+
     def allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
         """
         Callback for the allocation subscriber
 
         :param allocation_msg: Allocation message
         """
-        pass
+
+        self.get_logger().info(f"{self.id} < Received allocation: \n    Task id: {allocation_msg.task_id}\n    Agent id: {allocation_msg.target_agent_id}\n    Action: {allocation_msg.action}\n    Priority: {allocation_msg.priority}")
+
+        # -> Check if bid is for a task the agent is aware of
+        if allocation_msg.task_id not in self.task_log.ids:
+            self.get_logger().info(f"!!! WARNING: Received allocation for task {allocation_msg.task_id} not in task log")
+            return
+        # -> Check if bid is for an agent the agent is aware of
+        elif allocation_msg.target_agent_id not in self.fleet.ids_active:
+            self.get_logger().info(f"!!! WARNING: Received allocation for agent {allocation_msg.target_agent_id} not in fleet")
+            return
+
+        # -> Convert allocation action to
+        allocation_state = self.action_to_allocation_state(action=allocation_msg.action)
+
+        # -> Action is not None
+        if allocation_state is not None:
+            # -> Merge received allocation into current allocation
+            self.shared_allocations_a, self.shared_allocations_priority_alpha = self.priority_merge(
+                task_id=allocation_msg.task_id,
+                agent_id=allocation_msg.target_agent_id,
+
+                # -> Updated matrix
+                # > Updated matrix value
+                matrix_updated=self.shared_allocations_a,
+                matrix_updated_ij=self.shared_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+
+                # > Updated priority value
+                matrix_priority_updated=self.shared_allocations_priority_alpha,
+                priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+
+                # -> Source matrix
+                # > Source matrix value
+                matrix_source=None,
+                matrix_source_ij=allocation_state,
+
+                # > Source priority value
+                matrix_priority_source=None,
+                priority_source_ij=allocation_msg.priority,
+
+                reset=True
+            )
+
+            # -> Update allocation
+            self.update_allocation()
+
+            # -> If state has changed, update local states (only publish when necessary)
+            self.check_publish_state_change()
 
     @abstractmethod
     def task_msg_subscriber_callback(self, task_msg):
@@ -638,20 +833,20 @@ class MAAFAgent(Node):
     @abstractmethod
     def __update_shared_states(
             self,
-            received_current_bids_b,
-            received_current_bids_priority_beta,
-            received_current_allocations_a,
-            received_current_allocations_priority_alpha
+            received_shared_bids_b,
+            received_shared_bids_priority_beta,
+            received_shared_allocations_a,
+            received_shared_allocations_priority_alpha
     ):
         """
         Update local states with received states from the fleet
 
-        :param received_current_bids_b: Task bids matrix b received from the fleet
-        :param received_current_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param received_current_allocations_a: Task allocations matrix a received from the fleet
-        :param received_current_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
+        :param received_shared_bids_b: Task bids matrix b received from the fleet
+        :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
+        :param received_shared_allocations_a: Task allocations matrix a received from the fleet
+        :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
-    pass
+        pass
 
     # ---------------- Processes
     # >>>> Base
@@ -662,15 +857,25 @@ class MAAFAgent(Node):
         :param task: Task object
         :param agent_lst: List of agents to compute bids for
 
-        :return: Bid(s) list, with target agent id and corresponding bid value
+        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
         """
 
-        return self.bid_evaluation_function(
+        # -> If no bid evaluation function, return empty list
+        if self.bid_evaluation_function is None:
+            return []
+
+        # TODO: Cleanup
+        if self.bid_evaluation_function is anticipated_action_task_interceding_agent:
+            agent_lst = self.fleet.agents_active
+
+        bids = self.bid_evaluation_function(
             task=task,
             agent_lst=agent_lst,
-            env=self.env,
+            shared_bids_b=self.shared_bids_b,
+            environment=self.env,
             logger=self.get_logger()
         )
+        return bids
 
     def publish_allocation_state_msg(self):
         """
@@ -688,7 +893,14 @@ class MAAFAgent(Node):
         msg.target = "all"
 
         msg.meta_action = "allocation update"
-        msg.memo = dumps(self.allocation_state)
+        msg.memo = dumps(
+            self.get_state(
+                state_awareness=True,
+                local_allocation_state=False,
+                shared_allocation_state=True,
+                serialised=True
+            )
+        )
 
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
@@ -724,6 +936,14 @@ class MAAFAgent(Node):
 
         # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
+    # >>>> Node specific
+    @abstractmethod
+    def update_allocation(self):
+        """
+        Update allocation state for the agent
+        """
+        pass
+
     # ---------------- tools
     @staticmethod
     def action_to_allocation_state(action: int) -> Optional[int]:
@@ -743,12 +963,21 @@ class MAAFAgent(Node):
         else:
             return None         # No action
 
-    def rebroadcast(self, msg, publisher):
+    def rebroadcast(self, msg, publisher) -> tuple:
         """
         Conditional rebroadcast of a message based on the trace
         The trace ensures every msg is only broadcast once per robot
         The second output (trace_flag), returns whether a msg was re-broadcasted based on the trace
+
+        :param msg: Message to rebroadcast
+        :param publisher: Publisher to use
+
+        :return: tuple (msg, trace_flag)
         """
+
+        if not self.rebroadcast_received_msgs:
+            return msg, False
+
         # -> If self not in trace, add self to trace and re-broadcast
         if self.id not in msg.trace:
             msg.trace.append(self.id)
@@ -770,7 +999,14 @@ class MAAFAgent(Node):
 
         deserialised_state = loads(state)
 
-        pandas_dicts = self.local_allocation_state_dict.keys() | self.shared_allocation_state_dict.keys()
+        states = self.get_state(
+            state_awareness=False,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=False
+        )
+
+        pandas_dicts = states.keys()
 
         for key, value in deserialised_state.items():
             # -> If the value is in the local or shared allocation state ...
@@ -779,3 +1015,34 @@ class MAAFAgent(Node):
                 deserialised_state[key] = pd.DataFrame(value) if isinstance(value, dict) else pd.Series(value)
 
         return deserialised_state
+
+    @abstractmethod
+    def priority_merge(
+            self,
+            task_id: str,
+            agent_id: str,
+
+            # -> Updated matrix
+            # > Updated matrix value
+            matrix_updated: pd.DataFrame,
+            matrix_updated_ij: float,
+
+            # > Updated priority value
+            matrix_priority_updated: pd.DataFrame,
+            priority_updated_ij: float,
+
+            # -> Source matrix
+            # > Source matrix value
+            matrix_source: Optional[pd.DataFrame],
+            matrix_source_ij: float,
+
+            # > Source priority value
+            matrix_priority_source: Optional[pd.DataFrame],
+            priority_source_ij: float,
+
+            reset: bool = False
+        ):
+        """
+        Priority merge function for the agent
+        """
+        pass

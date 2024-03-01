@@ -14,15 +14,15 @@ from maaf_allocation_node.task_dataclasses import Task
 ##################################################################################################################
 
 
-def graph_weighted_manhattan_distance_bid(
-        task: Task, 
-        agent_lst: list[Agent], 
+def anticipated_action_task_interceding_agent(
+        task: Task,
+        agent_lst: list[Agent],
         shared_bids_b,
-        environment, 
+        environment,
         logger
     ) -> list[dict]:
     """
-    Calculate the weighted Manhattan distance between a task and a list of agents.
+    For the provided agent, magnify the bid for the task if the agent has the skillset for the task
 
     :param task: The task to calculate the distance to.
     :param agent_lst: The list of agents to calculate the distance from.
@@ -33,18 +33,8 @@ def graph_weighted_manhattan_distance_bid(
     :return: A list of dictionaries containing the agent ID and the weighted Manhattan distance to the task.
     """
 
-    if environment is None:
-        # -> Return 0 bids for all agents as the environment is not available
-        logger.warning("!!!!!! WARNING: Environment not available")
-        return [
-            {
-            "agent_id": agent.id,
-            "bid": 0,
-            "allocation": 0
-            } for agent in agent_lst
-        ]
-
-    # logger.info(f"Calculating weighted Manhattan distance for task {task.id}")
+    if task.type == "GOTO":
+        return []
 
     bids = []
 
@@ -52,8 +42,15 @@ def graph_weighted_manhattan_distance_bid(
     valid_agents = []
 
     for agent in agent_lst:
-        if task.type in agent.skillset:
+        # -> If the task id is even and the agent has the ACTION_1 skillset
+        if int(task.id) % 2 == 0 and agent.has_skill("ACTION_1"):
             valid_agents.append(agent)
+
+        # -> Elif the task id is odd and the agent has the ACTION_2 skillset
+        elif int(task.id) % 2 != 0 and agent.has_skill("ACTION_2"):
+            valid_agents.append(agent)
+
+        # -> Else, do not intercede (bid 0)
         else:
             bids.append({
                 "agent_id": agent.id,
@@ -63,24 +60,10 @@ def graph_weighted_manhattan_distance_bid(
 
     # -> Calculate the weighted Manhattan distance for all valid agents
     for agent in valid_agents:
-        # -> Agent node
-        agent_node = (agent.state.x, agent.state.y)
-
-        # -> Task node
-        task_node = (task.instructions["x"], task.instructions["y"])
-
-        # -> Find the weigthed Manhattan distance between the agent and the task
-        path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
-
-        # -> Calculate the total distance
-        total_distance = random.uniform(00.00000000001, 0.1)
-        for i in range(len(path) - 1):
-            total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
-
         # -> Add bid to the list
         bids.append({
             "agent_id": agent.id,
-            "bid": 1/total_distance,
+            "bid": 100 + random.uniform(00.00000000001, 0.1),
             "allocation": 0
         })
 
