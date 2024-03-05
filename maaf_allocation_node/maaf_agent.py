@@ -125,8 +125,6 @@ class MAAFAgent(Node):
             elif bid_function[self.id] == "anticipated_action_task_interceding_agent":
                 self.bid_evaluation_function = anticipated_action_task_interceding_agent
 
-        self.get_logger().info(f"         > Agent {self.id} using: {self.bid_evaluation_function}")
-
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
 
@@ -145,6 +143,11 @@ class MAAFAgent(Node):
         # -> Initialise previous state hash
         self.prev_state_hash_dict = None
         # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
+
+        self.get_logger().info(f"\n> Agent {self.id} initialised: " +
+                               f"\n     Skillset: {self.skillset}" +
+                               f"\n     Bid evaluation: {self.bid_evaluation_function}"
+                               )
 
     # ============================================================== INIT
     def __setup_fleet_and_task_log(self) -> None:
@@ -329,7 +332,7 @@ class MAAFAgent(Node):
         )
 
         # ----------------------------------- Timers
-        # ---- Fleet msg update timer
+        # # ---- Fleet msg update timer
         # self.fleet_msg_update_timer = self.create_timer(
         #     timer_period_sec=FLEET_MSG_UPDATE_TIMER,
         #     callback=self.fleet_msg_update_timer_callback
@@ -870,18 +873,26 @@ class MAAFAgent(Node):
         if self.bid_evaluation_function is None:
             return []
 
-        # TODO: Cleanup
-        if self.bid_evaluation_function is anticipated_action_task_interceding_agent:
-            agent_lst = self.fleet.agents_active
-
-        bids = self.bid_evaluation_function(
+        task_bids = self.bid_evaluation_function(
             task=task,
             agent_lst=agent_lst,
             shared_bids_b=self.shared_bids_b,
             environment=self.env,
             logger=self.get_logger()
         )
-        return bids
+
+        # -> Store bids to local bids matrix
+        for bid in task_bids:
+            # > Bid
+            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+
+            # > Allocation
+            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+
+        # -> Set task bid reference state
+        task.local["bid(s)_reference_state"] = self.agent.state
+
+        return task_bids
 
     def publish_allocation_state_msg(self):
         """

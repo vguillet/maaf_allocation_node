@@ -18,7 +18,7 @@ class Agent:
     skillset: List[str]                     # Skillset of the agent
     state: Agent_state                      # State of the agent, state object
 
-    local: dict = field(default_factory=dict)  # Local data of the agent
+    local: dict = field(default_factory=dict)  # Local data of the agent, does not get serialized and passed around
 
     def __repr__(self) -> str:
         return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.state.status}"

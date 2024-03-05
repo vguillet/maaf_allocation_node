@@ -33,7 +33,7 @@ def anticipated_action_task_interceding_agent(
     :return: A list of dictionaries containing the agent ID and the weighted Manhattan distance to the task.
     """
 
-    if task.type == "GOTO":
+    if task.type != "GOTO":
         return []
 
     if environment is None:
@@ -85,13 +85,10 @@ def anticipated_action_task_interceding_agent(
         for i in range(len(path) - 1):
             total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 
-        # -> Add 100 to the bid to magnify it
-        total_distance += 100
-
         # -> Add bid to the list
         bids.append({
             "agent_id": agent.id,
-            "bid": 1/total_distance,
+            "bid": 1/total_distance + 1,
             "allocation": 0
         })
 

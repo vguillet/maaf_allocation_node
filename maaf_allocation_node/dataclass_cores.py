@@ -14,6 +14,8 @@ class maaf_list_dataclass:
     __on_add_item_listeners = []
     __on_update_item_listeners = []
     __on_remove_item_listeners = []
+    __on_edit_list_listeners = []
+    manual_on_edit_list_listeners_call = False
 
     def __str__(self):
         return self.__repr__()
@@ -26,6 +28,95 @@ class maaf_list_dataclass:
         Get a list of item ids in the item log.
         """
         return [item.id for item in self.items]
+
+    # ============================================================== Listeners
+    # ------------------------------ Edit
+    def add_on_edit_list_listener(self, listener: callable) -> None:
+        """
+        Add a listener to be called when the item list is edited.
+
+        :param listener: The listener to add.
+        """
+        self.__on_edit_list_listeners.append(listener)
+
+    def call_on_edit_list_listeners(self) -> None:
+        """
+        Call all on_edit_list listeners.
+        """
+
+        # -> If the manual_on_edit_list_listeners_call flag is set, return
+        if self.manual_on_edit_list_listeners_call:
+            return
+
+        # -> Call all on_edit_list listeners
+        for listener in self.__on_edit_list_listeners:
+            listener()
+
+    # ------------------------------ Update
+    def add_on_update_item_listener(self, listener: callable) -> None:
+        """
+        Add a listener to be called when an item is updated in the item log.
+
+        :param listener: The listener to add.
+        """
+        self.__on_update_item_listeners.append(listener)
+
+    def call_on_update_item_listeners(self, item: item_class) -> None:
+        """
+        Call all on_update_item listeners.
+
+        :param item: The item that was updated.
+        """
+        # -> Call all on_update_item listeners
+        for listener in self.__on_update_item_listeners:
+            listener(item)
+
+        # -> Call all on_edit_list listeners
+        self.call_on_edit_list_listeners()
+
+    # ------------------------------ Add
+    def add_on_add_item_listener(self, listener: callable) -> None:
+        """
+        Add a listener to be called when an item is added to the item log.
+
+        :param listener: The listener to add.
+        """
+        self.__on_add_item_listeners.append(listener)
+
+    def call_on_add_item_listeners(self, item: item_class) -> None:
+        """
+        Call all on_add_item listeners.
+
+        :param item: The item that was added.
+        """
+        # -> Call all on_add_item listeners
+        for listener in self.__on_add_item_listeners:
+            listener(item)
+
+        # -> Call all on_edit_list listeners
+        self.call_on_edit_list_listeners()
+
+    # ------------------------------ Remove
+    def add_on_remove_item_listener(self, listener: callable) -> None:
+        """
+        Add a listener to be called when an item is removed from the item log.
+
+        :param listener: The listener to add.
+        """
+        self.__on_remove_item_listeners.append(listener)
+
+    def call_on_remove_item_listeners(self, item: item_class) -> None:
+        """
+        Call all on_remove_item listeners.
+
+        :param item: The item that was removed.
+        """
+        # -> Call all on_remove_item listeners
+        for listener in self.__on_remove_item_listeners:
+            listener(item)
+
+        # -> Call all on_edit_list listeners
+        self.call_on_edit_list_listeners()
 
     # ============================================================== Sort
     def sort(self, key: callable = None, reverse: bool = False) -> None:
@@ -48,6 +139,9 @@ class maaf_list_dataclass:
         """
         Retrieve an iterator for the item log.
         """
+        # -> Sort items list by id
+        self.sort(key=lambda x: x.id)
+
         return iter(self.items)
 
     def __getitem__(self, item_id: int or str) -> Optional[item_class]:
@@ -66,14 +160,6 @@ class maaf_list_dataclass:
         return None
 
     # ============================================================== Set
-    def add_on_update_item_listener(self, listener: callable) -> None:
-        """
-        Add a listener to be called when an item is updated in the item log.
-
-        :param listener: The listener to add.
-        """
-        self.__on_update_item_listeners.append(listener)
-
     def update_item_fields(self, item: int or str or item_class, field_value_pair: dict) -> None:
         """
         Update fields of an item with given item_id.
@@ -112,18 +198,9 @@ class maaf_list_dataclass:
                 if DEBUG: print(f"!!! Update item fields failed (3): {self.item_class} with id '{item.id}' does not have field '{key}' !!!")
 
         # -> Call the on_update_item method
-        for listener in self.__on_update_item_listeners:
-            listener(item)
+        self.call_on_update_item_listeners(item)
 
     # ============================================================== Add
-    def add_on_add_item_listener(self, listener: callable) -> None:
-        """
-        Add a listener to be called when an item is added to the item log.
-
-        :param listener: The listener to add.
-        """
-        self.__on_add_item_listeners.append(listener)
-
     def add_item(self, item: item_class) -> None:
         """
         Add an item to the item log. If the item is a list, add each item to the item log individually recursively.
@@ -139,9 +216,11 @@ class maaf_list_dataclass:
         else:
             self.items.append(item)
 
+        # -> Sort items list by id
+        self.sort(key=lambda x: x.id)
+
         # -> Call the on_add_item method
-        for listener in self.__on_add_item_listeners:
-            listener(item)
+        self.call_on_add_item_listeners(item)
 
     def add_item_by_dict(self, item_data: dict) -> None:
         """
@@ -157,14 +236,6 @@ class maaf_list_dataclass:
         self.add_item(new_item)
 
     # ============================================================== Remove
-    def add_on_remove_item_listener(self, listener: callable) -> None:
-        """
-        Add a listener to be called when an item is removed from the item log.
-
-        :param listener: The listener to add.
-        """
-        self.__on_remove_item_listeners.append(listener)
-
     def remove_item(self, item: item_class) -> None:
         """
         Remove an item from the item log.
@@ -179,8 +250,7 @@ class maaf_list_dataclass:
             if DEBUG: print(f"!!! Remove item failed: {self.item_class} with id '{item.id}' does not exist in the item log !!!")
 
         # -> Call the on_remove_item method
-        for listener in self.__on_remove_item_listeners:
-            listener(item)
+        self.call_on_remove_item_listeners(item)
 
     def remove_item_by_id(self, item_id: str or int) -> None:
         """

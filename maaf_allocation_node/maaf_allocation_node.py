@@ -34,6 +34,8 @@ from .fleet_dataclasses import Agent, Fleet
 from .state_dataclasses import Agent_state
 from .tools import *
 from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+from .Bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+from .Bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
 
 ##################################################################################################################
 
@@ -128,16 +130,18 @@ class maaf_allocation_node(MAAFAgent):
                 return
 
             # TODO: Remove this line once task creation handles stamp creation
-            task_dict["creation_timestamp"] = self.current_timestamp
+            task.creation_timestamp = self.current_timestamp
 
         elif task_msg.meta_action == "completed":
-            task_dict["termination_timestamp"] = self.current_timestamp
+            task.termination_timestamp = self.current_timestamp
             # TODO: Finish implementing task completion
 
         elif task_msg.meta_action == "cancelled":
-            task_dict["termination_timestamp"] = self.current_timestamp
+            task.termination_timestamp = self.current_timestamp
             # TODO: Implement task cancel
             pass
+
+        self.get_logger().info(str(task))
 
         # -> Update situation awareness
         self.__update_situation_awareness(task_list=[task], fleet=None)
@@ -174,11 +178,11 @@ class maaf_allocation_node(MAAFAgent):
         # -> Check if the message is for the agent
         msg_target = team_msg.target
 
-        # -> If the message is not for the agent...
-        if msg_target != self.id and msg_target != "all":
-            # -> Check if the agent should rebroadcast the message
-            msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
-            return
+        # # -> If the message is not for the agent...
+        # if msg_target != self.id and msg_target != "all":
+        #     # -> Check if the agent should rebroadcast the message
+        #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
+        #     return
 
         # -> Deserialise allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
@@ -223,9 +227,9 @@ class maaf_allocation_node(MAAFAgent):
         if self.state_change:
             self.check_publish_state_change()
 
-        else:
-            # -> Check if the agent should rebroadcast the message
-            msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
+        # else:
+        #     # -> Check if the agent should rebroadcast the message
+        #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # >>>> CBAA
     def __update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
@@ -313,27 +317,33 @@ class maaf_allocation_node(MAAFAgent):
             for matrix in state.values():
                 matrix.loc[task.id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
 
-            # -> Estimate bid(s) for new task
-            task_bids = self.bid(task=self.task_log[task.id], agent_lst=[self.agent])
-
-            # -> Store bids to local bids matrix
-            for bid in task_bids:
-                # > Bid
-                self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
-
-                # > Allocation
-                self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
-
         def terminate_task(task: Task) -> None:
+            """
+            Flag task as terminated in task log and remove all relevant allocation lists and matrices rows
+            """
             # -> Update task log
-            self.task_log.update_item_fields(
-                item=task.id,
-                field_value_pair={
-                    "status": task.status,  # Termination reason: completed, cancelled, failed
-                    "termination_timestamp": task.termination_timestamp
-                }
-            )
-            
+            if task.status == "completed":
+                self.task_log.flag_task_completed(
+                    task=task,
+                    termination_source_id=task.termination_source_id,
+                    termination_timestamp=task.termination_timestamp
+                )
+
+            elif task.status == "cancelled":
+                self.task_log.flag_task_cancelled(
+                    task=task,
+                    termination_source_id=task.termination_source_id,
+                    termination_timestamp=task.termination_timestamp
+                )
+
+            else:
+                self.get_logger().warning(f"Task {task.id} termination status is not valid: {task.status}, must be 'completed' or 'cancelled'")
+
+            # -> Cancel goal if task is assigned to self
+            if self.task_list_x.loc[task.id, "task_list_x"] == 1:
+                # -> Cancel goal
+                self.publish_goal_msg(task_id=task.id, meta_action="unassign")
+
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
                 state_awareness=False,
@@ -373,6 +383,8 @@ class maaf_allocation_node(MAAFAgent):
                         remove_agent(agent=agent)
 
         # -> Update task log and local states
+        task_list_edit = False
+
         if task_list is not None:
             for task in task_list:
                 # -> If the task is not in the task log ...
@@ -380,14 +392,20 @@ class maaf_allocation_node(MAAFAgent):
                     # -> If the task is pending, add to task log and extend local states with new rows
                     if task.status == "pending":
                         add_task(task=task)
+                        task_list_edit = True
 
-                    # -> If the task is completed, only add to the task log
+                    # -> If the task is completed, only add to the task log (do not recompute bids)
                     else:
                         self.task_log.add_task(task=task)
-                
+
                 # -> Else if the task is in the task log and is not pending, flag as terminated in task log and remove rows from the local states
                 elif task.status != "pending" and self.task_log[task.id].status == "pending":
                     terminate_task(task=task)
+                    task_list_edit = True
+
+        # -> If task list has been updated, compute bids
+        if task_list_edit:
+            self.compute_bids()
 
     def __update_shared_states(
             self,
@@ -510,6 +528,37 @@ class maaf_allocation_node(MAAFAgent):
 
     # ---------------- Processes
     # >>>> CBAA
+    def compute_bids(self) -> None:
+        """
+        Conditionally compute bids for all tasks based on the current state and the state the current
+        bids were computed in. If the current state is different from the state the current bids were
+        computed in, recompute the bids.
+        """
+        # ... for each task
+        for task in self.task_log.tasks_pending:
+            # -> Check bid reference state
+            compute_bids = False
+
+            # > If bids where never computed for the task, compute bids
+            if "bid(s)_reference_state" not in task.local.keys():
+                compute_bids = True
+
+            # > If bids are outdated, compute bids
+            elif task.local["bid(s)_reference_state"] != self.agent.state:
+                compute_bids = True
+
+            # -> Compute bids if necessary
+            if compute_bids:
+                # -> List agents to compute bids for
+                # TODO: Clean up
+                if self.bid_evaluation_function is anticipated_action_task_interceding_agent:
+                    agent_lst = self.fleet.agents_active
+                else:
+                    agent_lst = [self.agent]
+
+                # -> Compute bids
+                self.bid(task=task, agent_lst=agent_lst)
+
     def update_allocation(self):
         """
         Select a task to bid for based on the current state
@@ -601,7 +650,7 @@ class maaf_allocation_node(MAAFAgent):
                 # -> Update winning bids
                 self.winning_bids_y.loc[selected_task, "winning_bids_y"] = self.shared_bids_b.loc[selected_task, self.id]
 
-                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 3)} - Pending task count: {len(self.task_log.ids_pending)})")
+                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 5)} - Pending task count: {len(self.task_log.ids_pending)})")
 
                 # -> Assign goal
                 self.publish_goal_msg(task_id=selected_task, meta_action="assign")
@@ -662,7 +711,6 @@ class maaf_allocation_node(MAAFAgent):
 
         print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>")
 
-    # ---------------- tools
     # >>>> CBAA
     def priority_merge(
             self,

@@ -29,6 +29,7 @@ class Task:
     status: str = "pending"     # pending, completed, cancelled
 
     # name: str = ""
+    local: dict = field(default_factory=dict)  # Local data of the agent, does not get serialized and passed around
 
     def __repr__(self) -> str:
         return f"Task {self.id} ({self.type}) - Creation timestamp: {self.creation_timestamp} - Status: {self.status} - Priority: {self.priority}"
@@ -52,6 +53,9 @@ class Task:
         # -> Get the fields of the Task class
         task_fields = fields(self)
 
+        # -> Exclude the local field
+        task_fields = [f for f in task_fields if f.name != "local"]
+
         # -> Create a dictionary with field names as keys and their current values
         fields_dict = {f.name: getattr(self, f.name) for f in task_fields}
 
@@ -69,6 +73,9 @@ class Task:
         """
         # -> Get the fields of the Task class
         task_fields = fields(cls)
+
+        # -> Exclude the local field
+        task_fields = [f for f in task_fields if f.name != "local"]
 
         # -> Extract field names from the fields
         field_names = {f.name for f in task_fields}
@@ -168,42 +175,70 @@ class Task_log(maaf_list_dataclass):
         return filtered_tasks
 
     # ============================================================== Set
-    def flag_task_completed(self, task: int or str or item_class or List[int or str or item_class]) -> None:
+    def flag_task_completed(self,
+                            task: int or str or item_class or List[int or str or item_class],
+                            termination_source_id,
+                            termination_timestamp
+                            ) -> None:
         """
         Mark a task as completed with given task_id.
 
         :param task: The task to flag as completed. Can be a task id, task object, or a list of task ids or task objects.
+        :param termination_source_id: The source id of the task termination. Must be a list if task is a list.
+        :param termination_timestamp: The timestamp of the task termination. Must be a list if task is a list.
         """
 
         # -> If the task_id is a list, flag each task as completed individually recursively
         if isinstance(task, list):
-            for t in task:
-                self.flag_task_completed(task=t)
+            for i in range(len(task)):
+                self.flag_task_completed(
+                    task=task[i],
+                    termination_source_id=termination_source_id[i],
+                    termination_timestamp=termination_timestamp[i]
+                )
             return
 
         # -> Update the task status to 'completed'
         self.update_item_fields(
                 item=task,
-                field_value_pair={"status": "completed", "termination_timestamp": datetime.now()}
+                field_value_pair={
+                    "status": "completed",
+                    "termination_source_id": termination_source_id,
+                    "termination_timestamp": termination_timestamp
+                }
             )
 
-    def flag_task_cancelled(self, task: int or str or item_class or List[int or str or item_class]) -> None:
+    def flag_task_cancelled(self,
+                            task: int or str or item_class or List[int or str or item_class],
+                            termination_source_id,
+                            termination_timestamp
+                            ) -> None:
         """
         Mark a task as cancelled with given task_id.
 
         :param task: The task to flag as cancelled. Can be a task id, task object, or a list of task ids or task objects.
+        :param termination_source_id: The source id of the task termination. Must be a list if task is a list.
+        :param termination_timestamp: The timestamp of the task termination. Must be a list if task is a list.
         """
 
         # -> If the task_id is a list, flag each task as cancelled individually recursively
         if isinstance(task, list):
-            for t in task:
-                self.flag_task_cancelled(t)
+            for i in range(len(task)):
+                self.flag_task_cancelled(
+                    task=task[i],
+                    termination_source_id=termination_source_id[i],
+                    termination_timestamp=termination_timestamp[i]
+                )
             return
 
         # -> Update the task status to 'cancelled'
         self.update_item_fields(
                 item=task,
-                field_value_pair={"status": "cancelled", "termination_timestamp": datetime.now()}
+                field_value_pair={
+                    "status": "cancelled",
+                    "termination_timestamp": termination_timestamp,
+                    "termination_source_id": termination_source_id
+                }
             )
 
     # ============================================================== Add
