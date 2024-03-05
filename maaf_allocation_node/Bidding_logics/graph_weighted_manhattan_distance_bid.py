@@ -33,17 +33,6 @@ def graph_weighted_manhattan_distance_bid(
     :return: A list of dictionaries containing the agent ID and the weighted Manhattan distance to the task.
     """
 
-    if environment is None:
-        # -> Return 0 bids for all agents as the environment is not available
-        logger.warning("!!!!!! WARNING: Environment not available")
-        return [
-            {
-            "agent_id": agent.id,
-            "bid": 0,
-            "allocation": 0
-            } for agent in agent_lst
-        ]
-
     bids = []
 
     # -> Check the agents skillset against the task instructions
@@ -70,6 +59,16 @@ def graph_weighted_manhattan_distance_bid(
         # -> Find the weigthed Manhattan distance between the agent and the task
         path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
+        # > Get path x and y
+        path_x = [node[0] for node in path]
+        path_y = [node[1] for node in path]
+
+        # > Store path to task local
+        task.local["path"] = {
+            "x": path_x,
+            "y": path_y
+        }
+
         # -> Calculate the total distance
         total_distance = random.uniform(00.00000000001, 0.1)
         for i in range(len(path) - 1):
@@ -81,7 +80,5 @@ def graph_weighted_manhattan_distance_bid(
             "bid": 1/total_distance,
             "allocation": 0
         })
-
-    # logger.info(f"Bids calculated: {bids}")
 
     return bids

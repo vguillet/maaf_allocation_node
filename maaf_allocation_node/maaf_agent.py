@@ -41,7 +41,6 @@ import rclpy
 from rclpy.node import Node
 from rclpy.time import Time
 from geometry_msgs.msg import Twist, PoseStamped, Point
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 # TODO: Cleanup
 # NetworkX
@@ -215,19 +214,6 @@ class MAAFAgent(Node):
         :return: None
         """
 
-        # ----------------------------------- QOS
-        # ---------- /fleet/fleet_msgs
-        qos_fleet_msgs = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL
-        )
-
-        # qos_fleet_msgs = QoSProfile(
-        #     reliability=QoSReliabilityPolicy.BEST_EFFORT,
-        #     history=QoSHistoryPolicy.KEEP_LAST,
-        #     depth=1
-        # )
-
         # ----------------------------------- Subscribers
         if RUN_MODE == OPERATIONAL:
             # ---------- /fleet/fleet_msgs
@@ -253,60 +239,39 @@ class MAAFAgent(Node):
             msg_type=TeamCommStamped,
             topic="/sim/environment",
             callback=self.env_callback,
-            qos_profile=10
+            qos_profile=qos_env
         )
 
         # ---------- /fleet/task
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
-        )
-
         self.robot_task_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=f"/fleet/task",
             callback=self.task_msg_subscriber_callback,
-            qos_profile=qos
+            qos_profile=qos_tasks
         )
 
         # ---------- /robot_.../pose
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.BEST_EFFORT,
-            history=QoSHistoryPolicy.KEEP_LAST,
-            depth=1
-        )
-
         self.robot_pose_sub = self.create_subscription(
             msg_type=PoseStamped,
             topic=f"/{self.id}/data/pose",
             callback=self.pose_subscriber_callback,
-            qos_profile=qos
+            qos_profile=qos_pose
         )
 
         # ---------- /fleet/bids
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
-        )
-
         self.fleet_bid_sub = self.create_subscription(
             msg_type=Bid,
             topic=f"/fleet/bids",
             callback=self.bid_subscriber_callback,
-            qos_profile=qos
+            qos_profile=qos_intercession
         )
 
         # ---------- /fleet/allocation
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
-        )
-
         self.fleet_allocation_sub = self.create_subscription(
             msg_type=Allocation,
             topic=f"/fleet/allocations",
             callback=self.allocation_subscriber_callback,
-            qos_profile=qos
+            qos_profile=qos_intercession
         )
 
         # ----------------------------------- Publishers
@@ -318,17 +283,12 @@ class MAAFAgent(Node):
         )
 
         # ---------- /robot_.../goal
-        qos = QoSProfile(
-            reliability=QoSReliabilityPolicy.RELIABLE,
-            history=QoSHistoryPolicy.KEEP_ALL,
-        )
-
         # Goals publisher
         self.goal_sequence_publisher = self.create_publisher(
             msg_type=TeamCommStamped,
             # topic=f"/{self.id}/control/goal", # TODO: Fix/clean up
             topic=f"/goal",
-            qos_profile=qos
+            qos_profile=qos_goal
         )
 
         # ----------------------------------- Timers
@@ -869,10 +829,16 @@ class MAAFAgent(Node):
         :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
         """
 
+        if self.env is None:
+            # -> Return 0 bids for all agents as the environment is not available
+            self.get_logger().warning("!!!!!! WARNING: Environment not available")
+            return []
+
         # -> If no bid evaluation function, return empty list
         if self.bid_evaluation_function is None:
             return []
 
+        # -> Compute bids
         task_bids = self.bid_evaluation_function(
             task=task,
             agent_lst=agent_lst,
@@ -945,7 +911,14 @@ class MAAFAgent(Node):
 
         # msg.memo = dumps(self.task_log[task_id].to_dict())    # TODO: Cleanup
         memo = self.task_log[task_id].to_dict()
+        memo["path"] = self.task_log[task_id].local["path"]
         memo["cost"] = self.local_bids_c.loc[task_id, self.id]
+
+        memo = {
+            "agent": self.agent.to_dict(),
+            "task": memo
+        }
+
         msg.memo = dumps(memo)
 
         # -> Publish message

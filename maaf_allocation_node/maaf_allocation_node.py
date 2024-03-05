@@ -115,7 +115,7 @@ class maaf_allocation_node(MAAFAgent):
             return
 
         # -> Unpack msg
-        task_dict = loads(task_msg.memo)  # Task from task factory
+        task_dict = loads(task_msg.memo)
 
         # -> Ensure id is a string
         task_dict["id"] = str(task_dict["id"])
@@ -140,8 +140,6 @@ class maaf_allocation_node(MAAFAgent):
             task.termination_timestamp = self.current_timestamp
             # TODO: Implement task cancel
             pass
-
-        self.get_logger().info(str(task))
 
         # -> Update situation awareness
         self.__update_situation_awareness(task_list=[task], fleet=None)

@@ -36,29 +36,18 @@ def anticipated_action_task_interceding_agent(
     if task.type != "GOTO":
         return []
 
-    if environment is None:
-        # -> Return 0 bids for all agents as the environment is not available
-        logger.warning("!!!!!! WARNING: Environment not available")
-        return [
-            {
-            "agent_id": agent.id,
-            "bid": 0,
-            "allocation": 0
-            } for agent in agent_lst
-        ]
-
     bids = []
 
     # -> Check the agents skillset against the task instructions
     valid_agents = []
 
     for agent in agent_lst:
-        # -> If the task id is even and the agent has the ACTION_1 skillset
-        if int(task.id) % 2 == 0 and agent.has_skill("ACTION_1"):
+        # -> If the goto leads to a task ACTION_1 and the agent has the ACTION_1 skillset
+        if task.instructions["ACTION_AT_LOC"] == "ACTION_1" and agent.has_skill("ACTION_1"):
             valid_agents.append(agent)
 
-        # -> Elif the task id is odd and the agent has the ACTION_2 skillset
-        elif int(task.id) % 2 != 0 and agent.has_skill("ACTION_2"):
+        # -> Elif the goto leads to a task ACTION_2 and the agent has the ACTION_2 skillset
+        elif task.instructions["ACTION_AT_LOC"] == "ACTION_2" and agent.has_skill("ACTION_2"):
             valid_agents.append(agent)
 
         # -> Else, do not intercede (bid 0)
@@ -79,6 +68,16 @@ def anticipated_action_task_interceding_agent(
 
         # -> Find the weigthed Manhattan distance between the agent and the task
         path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+        # > Get path x and y
+        path_x = [node[0] for node in path]
+        path_y = [node[1] for node in path]
+
+        # > Store path to task local
+        task.local["path"] = {
+            "x": path_x,
+            "y": path_y
+        }
 
         # -> Calculate the total distance
         total_distance = random.uniform(00.00000000001, 0.1)
