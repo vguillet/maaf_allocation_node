@@ -29,6 +29,7 @@ class Task:
     status: str = "pending"     # pending, completed, cancelled
 
     # name: str = ""
+    shared: dict = field(default_factory=dict)  # Shared data of the agent, gets serialized and passed around
     local: dict = field(default_factory=dict)  # Local data of the agent, does not get serialized and passed around
 
     def __repr__(self) -> str:
@@ -74,7 +75,8 @@ class Task:
         # -> Get the fields of the Task class
         task_fields = fields(cls)
 
-        # -> Exclude the local field
+        # -> Exclude the shared and local fields
+        task_fields = [f for f in task_fields if f.name != "shared"]
         task_fields = [f for f in task_fields if f.name != "local"]
 
         # -> Extract field names from the fields
@@ -91,11 +93,28 @@ class Task:
         return cls(**field_values)
 
 
+@dataclass
 class Task_log(maaf_list_dataclass):
     item_class = Task
+    __on_status_change_listeners: list[callable] = field(default_factory=list)
 
     def __repr__(self):
         return f"Task log: {len(self.items)} tasks ({len(self.tasks_completed)} completed, {len(self.tasks_pending)} pending, {len(self.tasks_cancelled)} cancelled)"
+
+    # ============================================================== Listeners
+    # ------------------------------ Status
+    def add_on_status_change_listener(self, listener):
+        """
+        Add a listener to the task log that listens for changes in the status of tasks.
+        """
+        self.__on_status_change_listeners.append(listener)
+
+    def call_on_status_change_listeners(self, task: Task):
+        """
+        Call all listeners that are listening for changes in the status of tasks.
+        """
+        for listener in self.__on_status_change_listeners:
+            listener(task)
 
     # ============================================================== Properties
     # ------------------------------ IDs
@@ -175,6 +194,45 @@ class Task_log(maaf_list_dataclass):
         return filtered_tasks
 
     # ============================================================== Set
+    def set_task_status(self,
+                        task: int or str or item_class or List[int or str or item_class],
+                        termination_status: str,
+                        termination_source_id,
+                        termination_timestamp
+                        ) -> None:
+        """
+        Set the status of a task with given task_id.
+
+        :param task: The task to set the status of. Can be a task id, task object, or a list of task ids or task objects.
+        :param termination_status: The status to set the task to. Must be a list if task is a list.
+        :param termination_source_id: The source id of the task termination. Must be a list if task is a list.
+        :param termination_timestamp: The timestamp of the task termination. Must be a list if task is a list.
+        """
+
+        # -> If the task_id is a list, flag each task as completed individually recursively
+        if isinstance(task, list):
+            for i in range(len(task)):
+                self.set_task_status(
+                    task=task[i],
+                    termination_status=termination_status[i],
+                    termination_source_id=termination_source_id[i],
+                    termination_timestamp=termination_timestamp[i]
+                )
+            return
+
+        # -> Update the task status to 'completed'
+        self.update_item_fields(
+            item=task,
+            field_value_pair={
+                "status": termination_status,
+                "termination_source_id": termination_source_id,
+                "termination_timestamp": termination_timestamp
+            }
+        )
+
+        # -> Call the on_status_change listeners
+        self.call_on_status_change_listeners(task)
+
     def flag_task_completed(self,
                             task: int or str or item_class or List[int or str or item_class],
                             termination_source_id,
@@ -188,25 +246,12 @@ class Task_log(maaf_list_dataclass):
         :param termination_timestamp: The timestamp of the task termination. Must be a list if task is a list.
         """
 
-        # -> If the task_id is a list, flag each task as completed individually recursively
-        if isinstance(task, list):
-            for i in range(len(task)):
-                self.flag_task_completed(
-                    task=task[i],
-                    termination_source_id=termination_source_id[i],
-                    termination_timestamp=termination_timestamp[i]
-                )
-            return
-
-        # -> Update the task status to 'completed'
-        self.update_item_fields(
-                item=task,
-                field_value_pair={
-                    "status": "completed",
-                    "termination_source_id": termination_source_id,
-                    "termination_timestamp": termination_timestamp
-                }
-            )
+        self.set_task_status(
+            task=task,
+            termination_status="completed",
+            termination_source_id=termination_source_id,
+            termination_timestamp=termination_timestamp
+        )
 
     def flag_task_cancelled(self,
                             task: int or str or item_class or List[int or str or item_class],
@@ -221,25 +266,12 @@ class Task_log(maaf_list_dataclass):
         :param termination_timestamp: The timestamp of the task termination. Must be a list if task is a list.
         """
 
-        # -> If the task_id is a list, flag each task as cancelled individually recursively
-        if isinstance(task, list):
-            for i in range(len(task)):
-                self.flag_task_cancelled(
-                    task=task[i],
-                    termination_source_id=termination_source_id[i],
-                    termination_timestamp=termination_timestamp[i]
-                )
-            return
-
-        # -> Update the task status to 'cancelled'
-        self.update_item_fields(
-                item=task,
-                field_value_pair={
-                    "status": "cancelled",
-                    "termination_timestamp": termination_timestamp,
-                    "termination_source_id": termination_source_id
-                }
-            )
+        self.set_task_status(
+            task=task,
+            termination_status="cancelled",
+            termination_source_id=termination_source_id,
+            termination_timestamp=termination_timestamp
+        )
 
     # ============================================================== Add
     def add_task(self, task: dict or item_class or List[dict or item_class]) -> None:

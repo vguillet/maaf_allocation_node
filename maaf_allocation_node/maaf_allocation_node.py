@@ -55,8 +55,7 @@ class maaf_allocation_node(MAAFAgent):
         self.__setup_allocation_additional_states()
 
         # -> Initialise previous state hash
-        self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
-        print("________________________", self.prev_state_hash_dict)
+        self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # -----------------------------------  Confirm initialisation
         self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
@@ -148,19 +147,19 @@ class maaf_allocation_node(MAAFAgent):
         self.update_allocation()
 
         # -> Update previous state hash
-        self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
+        self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # -> Publish allocation state to the fleet to share the new task
         self.publish_allocation_state_msg()
 
         if task_msg.meta_action == "pending":
-            self.get_logger().info(f"{self.id}   Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} * Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
 
         elif task_msg.meta_action == "completed":
-            self.get_logger().info(f"{self.id}   Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} v Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)}")
 
         elif task_msg.meta_action == "cancelled":
-            self.get_logger().info(f"{self.id}   Task {task.id} cancelled - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} x Task {task.id} cancelled - Pending task count: {len(self.task_log.ids_pending)}")
 
     def team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -177,10 +176,11 @@ class maaf_allocation_node(MAAFAgent):
         msg_target = team_msg.target
 
         # # -> If the message is not for the agent...
-        # if msg_target != self.id and msg_target != "all":
-        #     # -> Check if the agent should rebroadcast the message
-        #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
-        #     return
+        if msg_target != self.id and msg_target != "all":
+            return
+            # # -> Check if the agent should rebroadcast the message
+            # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
+            # return
 
         # -> Deserialise allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
@@ -222,8 +222,7 @@ class maaf_allocation_node(MAAFAgent):
         self.update_allocation()
 
         # -> If state has changed, update local states (only publish when necessary)
-        if self.state_change:
-            self.check_publish_state_change()
+        self.check_publish_state_change()
 
         # else:
         #     # -> Check if the agent should rebroadcast the message
@@ -566,7 +565,7 @@ class maaf_allocation_node(MAAFAgent):
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
 
-        if self.state_change:
+        if self.allocation_state_change:
             # > For each task ...
             for task_id in self.task_log.ids_pending:
                 # > For each agent ...

@@ -20,7 +20,7 @@ ACTION_1 = 1
 ACTION_2 = 2
 
 # TODO: Cleanup
-env_size = 19    # Environment size (6 for a 7x7 grid
+env_size = 9
 
 gotto_task_count = 20
 no_task_task_count = 6
@@ -43,7 +43,8 @@ agent_lst = ["Turtle_1", "Turtle_2", "Turtle_3", "Turtle_4"]
 # agent_lst = ["Turtle_1", "Turtle_2"]
 
 skillsets = {
-    "Operator": [],
+    # "Operator": [],
+    "Operator": ["GOTO", "ACTION_1"],
     "Turtle_1": ["GOTO", "ACTION_1"],
     "Turtle_2": ["GOTO", "ACTION_1"],
     "Turtle_3": ["GOTO", "ACTION_2"],
@@ -51,55 +52,10 @@ skillsets = {
 }
 
 bid_function = {
-    "Operator": "anticipated_action_task_interceding_agent",
+    # "Operator": "anticipated_action_task_interceding_agent",
+    "Operator": "graph_weighted_manhattan_distance_bid",
     "Turtle_1": "graph_weighted_manhattan_distance_bid",
     "Turtle_2": "graph_weighted_manhattan_distance_bid",
     "Turtle_3": "graph_weighted_manhattan_distance_bid",
     "Turtle_4": "graph_weighted_manhattan_distance_bid"
 }
-
-# ----------------- NODES CONFIGURATION -----------------
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
-
-qos_env = QoSProfile(
-    reliability=QoSReliabilityPolicy.BEST_EFFORT,
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=1
-)
-
-qos_fleet_msgs = QoSProfile(
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    history=QoSHistoryPolicy.KEEP_ALL
-)
-
-# qos_fleet_msgs = QoSProfile(
-#     reliability=QoSReliabilityPolicy.BEST_EFFORT,
-#     history=QoSHistoryPolicy.KEEP_LAST,
-#     depth=1
-# )
-
-qos_tasks = QoSProfile(
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    history=QoSHistoryPolicy.KEEP_ALL,
-)
-
-qos_pose = QoSProfile(
-    reliability=QoSReliabilityPolicy.BEST_EFFORT,
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=1
-)
-
-qos_intercession = QoSProfile(
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    history=QoSHistoryPolicy.KEEP_ALL,
-)
-
-qos_goal = QoSProfile(
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    history=QoSHistoryPolicy.KEEP_ALL,
-)
-
-qos_sim_epoch = QoSProfile(
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    history=QoSHistoryPolicy.KEEP_ALL,
-)

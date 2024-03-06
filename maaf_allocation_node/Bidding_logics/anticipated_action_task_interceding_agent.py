@@ -74,7 +74,7 @@ def anticipated_action_task_interceding_agent(
         path_y = [node[1] for node in path]
 
         # > Store path to task local
-        task.local["path"] = {
+        task.shared["path"] = {
             "x": path_x,
             "y": path_y
         }

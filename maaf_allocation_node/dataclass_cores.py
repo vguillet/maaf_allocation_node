@@ -11,10 +11,10 @@ class maaf_list_dataclass:
     items: list = field(default_factory=list)
     item_class = None
 
-    __on_add_item_listeners = []
-    __on_update_item_listeners = []
-    __on_remove_item_listeners = []
-    __on_edit_list_listeners = []
+    __on_add_item_listeners: list[callable] = field(default_factory=list)
+    __on_update_item_listeners: list[callable] = field(default_factory=list)
+    __on_remove_item_listeners: list[callable] = field(default_factory=list)
+    __on_edit_list_listeners: list[callable] = field(default_factory=list)
     manual_on_edit_list_listeners_call = False
 
     def __str__(self):
@@ -39,7 +39,7 @@ class maaf_list_dataclass:
         """
         self.__on_edit_list_listeners.append(listener)
 
-    def call_on_edit_list_listeners(self) -> None:
+    def call_on_edit_list_listeners(self, item: item_class) -> None:
         """
         Call all on_edit_list listeners.
         """
@@ -50,7 +50,7 @@ class maaf_list_dataclass:
 
         # -> Call all on_edit_list listeners
         for listener in self.__on_edit_list_listeners:
-            listener()
+            listener(item)
 
     # ------------------------------ Update
     def add_on_update_item_listener(self, listener: callable) -> None:
@@ -72,7 +72,7 @@ class maaf_list_dataclass:
             listener(item)
 
         # -> Call all on_edit_list listeners
-        self.call_on_edit_list_listeners()
+        self.call_on_edit_list_listeners(item)
 
     # ------------------------------ Add
     def add_on_add_item_listener(self, listener: callable) -> None:
@@ -94,7 +94,7 @@ class maaf_list_dataclass:
             listener(item)
 
         # -> Call all on_edit_list listeners
-        self.call_on_edit_list_listeners()
+        self.call_on_edit_list_listeners(item)
 
     # ------------------------------ Remove
     def add_on_remove_item_listener(self, listener: callable) -> None:
@@ -116,7 +116,7 @@ class maaf_list_dataclass:
             listener(item)
 
         # -> Call all on_edit_list listeners
-        self.call_on_edit_list_listeners()
+        self.call_on_edit_list_listeners(item)
 
     # ============================================================== Sort
     def sort(self, key: callable = None, reverse: bool = False) -> None:
@@ -160,14 +160,24 @@ class maaf_list_dataclass:
         return None
 
     # ============================================================== Set
-    def update_item_fields(self, item: int or str or item_class, field_value_pair: dict) -> None:
+    def update_item_fields(self,
+                           item: int or str or item_class,
+                           field_value_pair: dict,
+                           add_to_local: bool = False,
+                           add_to_shared: bool = False
+                           ) -> None:
         """
         Update fields of an item with given item_id.
         Returns True if item is updated successfully, False otherwise.
 
         :param item: The item to update.
         :param field_value_pair: A dict containing the field and value to update.
+        :param add_to_local: Whether to add the field to the local field if it does not exist.
+        :param add_to_shared: Whether to add the field to the shared field if it does not exist.
         """
+
+        assert add_to_local + add_to_shared < 2, "Cannot add to both local and shared fields"
+
         # -> If item is a string or int, find the item with the given ID
         if isinstance(item, str) or isinstance(item, int):
             item = self[item]
@@ -177,25 +187,38 @@ class maaf_list_dataclass:
             item = self[item.id]
 
         if item is None:
+            raise ValueError(f"!!! Update item fields failed: {self.item_class} with id '{item}' does not exist in the item log !!!")
             return None
 
         # If the item does not exist, warn the user
-        if item.id not in self.ids:
-            if DEBUG:
-                if not isinstance(item, self.item_class):
-                    print(f"!!! Update item fields failed (1): {self.item_class} with id '{item}' does not exist in the item log ({self.ids})!!!")
-                else:
-                    print(f"!!! Update item fields failed (2): {self.item_class} with id '{item.id}' does not exist in the item log  ({self.ids})!!!")
+        elif item.id not in self.ids:
+            raise ValueError(f"!!! Update item fields failed: {self.item_class} with id '{item.id}' does not exist in the item log !!!")
             return
 
+        # -> Update the fields of the item
         for key, value in field_value_pair.items():
-            setattr(item, key, value)
-
             # > Update the field if it exists
             if hasattr(item, key):
                 setattr(item, key, value)
+
+            # > Check if the field exist in the shared field
+            elif hasattr(item.shared, key):
+                setattr(item.shared, key, value)
+
+            # > Check if the field exist in the local field
+            elif hasattr(item.local, key):
+                setattr(item.local, key, value)
+
+            # > Add the field to the local field if it does not exist and add_to_local is True
+            elif add_to_local:
+                item.local[key] = value
+
+            # > Add the field to the shared field if it does not exist and add_to_shared is True
+            elif add_to_shared:
+                item.shared[key] = value
+
             else:
-                if DEBUG: print(f"!!! Update item fields failed (3): {self.item_class} with id '{item.id}' does not have field '{key}' !!!")
+                raise ValueError(f"!!! Update item fields failed (3): {self.item_class} with id '{item.id}' does not have field '{key}' !!!")
 
         # -> Call the on_update_item method
         self.call_on_update_item_listeners(item)

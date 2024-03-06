@@ -18,7 +18,8 @@ class Agent:
     skillset: List[str]                     # Skillset of the agent
     state: Agent_state                      # State of the agent, state object
 
-    local: dict = field(default_factory=dict)  # Local data of the agent, does not get serialized and passed around
+    shared: dict = field(default_factory=dict)  # Shared data of the agent, gets serialized and passed around
+    local: dict = field(default_factory=dict)   # Local data of the agent, does not get serialized and passed around
 
     def __repr__(self) -> str:
         return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.state.status}"
@@ -72,7 +73,8 @@ class Agent:
         # -> Get the fields of the Agent class
         agent_fields = fields(cls)
 
-        # > Exclude the local field
+        # > Exclude the shared and local fields
+        agent_fields = [f for f in agent_fields if f.name != "shared"]
         agent_fields = [f for f in agent_fields if f.name != "local"]
 
         # -> Extract field names from the fields
@@ -91,12 +93,33 @@ class Agent:
         # -> Create and return an Agent object
         return cls(**field_values)
 
-
+@dataclass
 class Fleet(maaf_list_dataclass):
     item_class = Agent
+    __on_state_change_listeners: list[callable] = field(default_factory=list)
 
     def __repr__(self):
         return f"Fleet: {len(self.items)} agents ({len(self.agents_active)} active, {len(self.agents_inactive)} inactive)"
+
+    # ============================================================== Listeners
+    # ------------------------------ State
+    def add_on_state_change_listener(self, listener: callable) -> None:
+        """
+        Add a listener to the list of listeners for the state change event.
+
+        :param listener: The listener to add to the list of listeners.
+        """
+        self.__on_state_change_listeners.append(listener)
+
+    def call_on_state_change_listeners(self, agent: Agent, state: Agent_state) -> None:
+        """
+        Call the state change listeners with the agent and the new state.
+
+        :param agent: The agent that changed state.
+        :param state: The new state of the agent.
+        """
+        for listener in self.__on_state_change_listeners:
+            listener(agent, state)
 
     # ============================================================== Properties
     # ------------------------------ IDs
@@ -196,6 +219,9 @@ class Fleet(maaf_list_dataclass):
             item=agent,
             field_value_pair={"state": state}
         )
+
+        # -> Call on state change listeners
+        self.call_on_state_change_listeners(agent, state)
 
     # ============================================================== Add
     def add_agent(self, agent: dict or Agent or List[dict or Agent]) -> None:

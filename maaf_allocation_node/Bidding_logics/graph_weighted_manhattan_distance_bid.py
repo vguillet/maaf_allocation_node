@@ -64,7 +64,7 @@ def graph_weighted_manhattan_distance_bid(
         path_y = [node[1] for node in path]
 
         # > Store path to task local
-        task.local["path"] = {
+        task.shared["path"] = {
             "x": path_x,
             "y": path_y
         }

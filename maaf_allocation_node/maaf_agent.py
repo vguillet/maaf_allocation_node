@@ -51,6 +51,7 @@ import matplotlib.pyplot as plt
 
 
 # Local Imports
+from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
 from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 from .node_config import *
 from .task_dataclasses import Task, Task_log
@@ -133,6 +134,14 @@ class MAAFAgent(Node):
         # ---- Fleet and task log
         self.__setup_fleet_and_task_log()
 
+        # ---- Listeners
+        self.__env_update_listeners = []
+        self.__pose_update_listeners = []
+
+        # -> Connect listeners
+        # self.fleet.add_on_edit_list_listener()
+        # self.task_log.add_on_edit_list_listener()
+
         # ---- Node connections
         self.__setup_node_pubs_subs()
 
@@ -140,7 +149,7 @@ class MAAFAgent(Node):
         self.__setup_allocation_base_states()
 
         # -> Initialise previous state hash
-        self.prev_state_hash_dict = None
+        self.prev_allocation_state_hash_dict = None
         # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
         self.get_logger().info(f"\n> Agent {self.id} initialised: " +
@@ -216,78 +225,77 @@ class MAAFAgent(Node):
 
         # ----------------------------------- Subscribers
         if RUN_MODE == OPERATIONAL:
-            # ---------- /fleet/fleet_msgs
+            # ---------- fleet_msgs
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
-                topic=f"/fleet/fleet_msgs",
+                topic=topic_fleet_msgs,
                 callback=self.team_msg_subscriber_callback,
                 qos_profile=qos_fleet_msgs
             )
 
         elif RUN_MODE == SIM:
-            # ---------- /sim/fleet/fleet_msgs_filtered
+            # ---------- fleet_msgs_filtered
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
-                topic=f"/sim/fleet/fleet_msgs_filtered",
+                topic=topic_fleet_msgs_filtered,
                 callback=self.team_msg_subscriber_callback,
                 qos_profile=qos_fleet_msgs
             )
 
-        # ---------- /sim/environment
+        # ---------- environment
         # TODO: Cleanup
-        self.env_subscriber = self.create_subscription(
+        self.env_sub = self.create_subscription(
             msg_type=TeamCommStamped,
-            topic="/sim/environment",
+            topic=topic_environment,
             callback=self.env_callback,
             qos_profile=qos_env
         )
 
-        # ---------- /fleet/task
-        self.robot_task_sub = self.create_subscription(
+        # ---------- task
+        self.task_sub = self.create_subscription(
             msg_type=TeamCommStamped,
-            topic=f"/fleet/task",
+            topic=topic_tasks,
             callback=self.task_msg_subscriber_callback,
             qos_profile=qos_tasks
         )
 
-        # ---------- /robot_.../pose
-        self.robot_pose_sub = self.create_subscription(
+        # ---------- pose
+        self.pose_sub = self.create_subscription(
             msg_type=PoseStamped,
-            topic=f"/{self.id}/data/pose",
+            topic=f"/{self.id}{topic_pose}",
             callback=self.pose_subscriber_callback,
             qos_profile=qos_pose
         )
 
-        # ---------- /fleet/bids
-        self.fleet_bid_sub = self.create_subscription(
+        # ---------- bids
+        self.bid_sub = self.create_subscription(
             msg_type=Bid,
-            topic=f"/fleet/bids",
+            topic=topic_bids,
             callback=self.bid_subscriber_callback,
             qos_profile=qos_intercession
         )
 
-        # ---------- /fleet/allocation
-        self.fleet_allocation_sub = self.create_subscription(
+        # ---------- allocation
+        self.allocation_sub = self.create_subscription(
             msg_type=Allocation,
-            topic=f"/fleet/allocations",
+            topic=topic_allocations,
             callback=self.allocation_subscriber_callback,
             qos_profile=qos_intercession
         )
 
         # ----------------------------------- Publishers
-        # ---------- /fleet/fleet_msgs
+        # ---------- fleet_msgs
         self.fleet_msgs_pub = self.create_publisher(
             msg_type=TeamCommStamped,
-            topic=f"/fleet/fleet_msgs",
+            topic=topic_fleet_msgs,
             qos_profile=qos_fleet_msgs
         )
 
-        # ---------- /robot_.../goal
+        # ---------- goals
         # Goals publisher
-        self.goal_sequence_publisher = self.create_publisher(
+        self.goals_pub = self.create_publisher(
             msg_type=TeamCommStamped,
-            # topic=f"/{self.id}/control/goal", # TODO: Fix/clean up
-            topic=f"/goal",
+            topic=topic_goals,
             qos_profile=qos_goal
         )
 
@@ -418,6 +426,39 @@ class MAAFAgent(Node):
         self.__setup_allocation_base_states()
         self.__setup_allocation_additional_states()
 
+    # ============================================================== Listeners
+    # ---------------- Env update
+    def add_on_env_update_listener(self, listener) -> None:
+        """
+        Add listener for environment updates
+
+        :param listener: callable
+        """
+        self.__env_update_listeners.append(listener)
+
+    def call_on_env_update_listeners(self) -> None:
+        """
+        Call all environment update listeners
+        """
+        for listener in self.__env_update_listeners:
+            listener()
+
+    # ---------------- Pose update
+    def add_on_pose_update_listener(self, listener) -> None:
+        """
+        Add listener for pose updates
+
+        :param listener: callable
+        """
+        self.__pose_update_listeners.append(listener)
+
+    def call_on_pose_update_listeners(self) -> None:
+        """
+        Call all pose update listeners
+        """
+        for listener in self.__pose_update_listeners:
+            listener()
+
     # ============================================================== PROPERTIES
     # ---------------- Generic
     @property
@@ -456,7 +497,7 @@ class MAAFAgent(Node):
     # ---------------- Self state
     # >>>> State change tracking
     @property
-    def state_hash_dict(self) -> dict:
+    def allocation_state_hash_dict(self) -> dict:
         """
         Hash of the agent allocation state
 
@@ -466,11 +507,11 @@ class MAAFAgent(Node):
         immutable_state = {}
 
         state = self.get_state(
-            state_awareness=True,
+            state_awareness=False,
             local_allocation_state=True,
             shared_allocation_state=True,
             serialised=True
-            )  # TODO: Review if use state or allocation_state
+            )
 
         for key, value in state.items():
             if isinstance(value, pd.Series):
@@ -483,16 +524,16 @@ class MAAFAgent(Node):
         return immutable_state
 
     @property
-    def state_change(self) -> bool:
+    def allocation_state_change(self) -> bool:
         """
         Check if the shared allocation state has changed
 
         :return: bool
         """
         # -> Compare hash of current state with hash of previous state
-        for key, value in self.state_hash_dict.items():
+        for key, value in self.allocation_state_hash_dict.items():
             # -> If any value has changed, return True
-            if value != self.prev_state_hash_dict[key]:
+            if value != self.prev_allocation_state_hash_dict[key]:
                 return True
 
         # -> If no value has changed, return False
@@ -500,9 +541,9 @@ class MAAFAgent(Node):
 
     def check_publish_state_change(self):
         # -> If state has changed, update local states (only publish when necessary)
-        if self.state_change:
+        if self.allocation_state_change:
             # -> Update previous state hash
-            self.prev_state_hash_dict = deepcopy(self.state_hash_dict)
+            self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
             # -> Publish allocation state to the fleet
             self.publish_allocation_state_msg()
@@ -609,9 +650,10 @@ class MAAFAgent(Node):
     # >>>> Base
     def env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
         if self.env is None:    # TODO: Review env management logic
-            self.get_logger().info(f"         > Received environment update")
+            self.get_logger().info(f"         < Received environment update")
             data = loads(msg.memo)
             self.env = {
+                "type": data["env_type"],
                 "graph": nx.node_link_graph(data["graph"]),
                 "pos": {eval(k): v for k, v in data["pos"].items()}
             }
@@ -631,6 +673,9 @@ class MAAFAgent(Node):
 
                     # > Allocation
                     self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+
+        # -> Call env update listeners
+        self.call_on_env_update_listeners()
 
     def pose_subscriber_callback(self, pose_msg) -> None:
         """
@@ -652,6 +697,9 @@ class MAAFAgent(Node):
 
         # > Timestamp
         self.agent.state.timestamp = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
+
+        # -> Call pose update listeners
+        self.call_on_pose_update_listeners()
 
         # self.get_logger().info(f"         < Received state update")
         # self.get_logger().info(f"{pformat(self.agent.state.to_dict())}")
@@ -911,8 +959,6 @@ class MAAFAgent(Node):
 
         # msg.memo = dumps(self.task_log[task_id].to_dict())    # TODO: Cleanup
         memo = self.task_log[task_id].to_dict()
-        memo["path"] = self.task_log[task_id].local["path"]
-        memo["cost"] = self.local_bids_c.loc[task_id, self.id]
 
         memo = {
             "agent": self.agent.to_dict(),
@@ -922,7 +968,7 @@ class MAAFAgent(Node):
         msg.memo = dumps(memo)
 
         # -> Publish message
-        self.goal_sequence_publisher.publish(msg)
+        self.goals_pub.publish(msg)
 
         # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
