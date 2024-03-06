@@ -700,9 +700,10 @@ class MAAFAgent(Node):
 
         # -> Call pose update listeners
         self.call_on_pose_update_listeners()
+        
+        self.publish_allocation_state_msg()     # TODO: Cleanup
 
-        # self.get_logger().info(f"         < Received state update")
-        # self.get_logger().info(f"{pformat(self.agent.state.to_dict())}")
+        # self.get_logger().info(f"         < Received state update ({self.agent.state.x},{self.agent.state.y},{self.agent.state.z})")
 
     def fleet_msg_update_timer_callback(self) -> None:
         """
@@ -958,11 +959,9 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         # msg.memo = dumps(self.task_log[task_id].to_dict())    # TODO: Cleanup
-        memo = self.task_log[task_id].to_dict()
-
         memo = {
             "agent": self.agent.to_dict(),
-            "task": memo
+            "task": self.task_log[task_id].to_dict()
         }
 
         msg.memo = dumps(memo)

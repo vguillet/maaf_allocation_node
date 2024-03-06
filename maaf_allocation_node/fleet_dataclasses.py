@@ -3,6 +3,7 @@ from typing import List, Optional
 from datetime import datetime
 from .dataclass_cores import maaf_list_dataclass
 from .state_dataclasses import Agent_state
+from copy import deepcopy
 
 DEBUG = True
 
@@ -111,15 +112,14 @@ class Fleet(maaf_list_dataclass):
         """
         self.__on_state_change_listeners.append(listener)
 
-    def call_on_state_change_listeners(self, agent: Agent, state: Agent_state) -> None:
+    def call_on_state_change_listeners(self, agent: Agent) -> None:
         """
         Call the state change listeners with the agent and the new state.
 
         :param agent: The agent that changed state.
-        :param state: The new state of the agent.
         """
         for listener in self.__on_state_change_listeners:
-            listener(agent, state)
+            listener(agent)
 
     # ============================================================== Properties
     # ------------------------------ IDs
@@ -209,10 +209,13 @@ class Fleet(maaf_list_dataclass):
         Set the state of an agent in the fleet. State can be a "active" or "inactive" string
 
         :param agent: The agent to set the state for. Can be the agent object, the agent ID, or a list of agent IDs.
+        :param state: The state to set for the agent. Can be a dictionary or an Agent_state object.
         """
         # -> If the state is a dictionary, convert it to an Agent_state object
         if isinstance(state, dict):
             state = Agent_state.from_dict(state)
+
+        prev_state = deepcopy(agent.state)
 
         # -> Update the state of the agent
         self.update_item_fields(
@@ -221,7 +224,8 @@ class Fleet(maaf_list_dataclass):
         )
 
         # -> Call on state change listeners
-        self.call_on_state_change_listeners(agent, state)
+        if prev_state != agent.state:
+            self.call_on_state_change_listeners(agent)
 
     # ============================================================== Add
     def add_agent(self, agent: dict or Agent or List[dict or Agent]) -> None:
