@@ -8,17 +8,17 @@ from launch import LaunchContext
 def generate_launch_description():
     nodes = []
 
-    for i in range(4):
+    for i in range(20):
          nodes.append(
             Node(
-                namespace=f"Turtle_{i+1}",
+                namespace=f"Turtle_{i}",
                 package="maaf_allocation_node",
                 executable="maaf_allocation_node",
                 output="screen",
                 parameters=[
                     {
-                        "id": f"Turtle_{i+1}",
-                        "name": f"Turtle_{i+1}"
+                        "id": f"Turtle_{i}",
+                        "name": f"Turtle_{i}"
                     }
                 ]
             )

@@ -9,18 +9,16 @@ def generate_launch_description():
     nodes = []
 
     for i in range(3):
-        ref = "Operator" if i == 0 else f"Turtle_{i}"
-
-        nodes.append(
+         nodes.append(
             Node(
-                namespace=ref,
+                namespace=f"Turtle_{i}",
                 package="maaf_allocation_node",
                 executable="maaf_allocation_node",
                 output="screen",
                 parameters=[
                     {
-                        "id": ref,
-                        "name": ref
+                        "id": f"Turtle_{i}",
+                        "name": f"Turtle_{i}"
                     }
                 ]
             )

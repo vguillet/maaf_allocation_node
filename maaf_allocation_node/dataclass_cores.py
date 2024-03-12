@@ -2,12 +2,43 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
+from abc import ABC, abstractmethod
 
 DEBUG = True
 
 
+class MaafItem:
+    def __reduce__(self):
+        """
+        Reduce the item to a dictionary.
+        """
+        return self.__class__, (*self.asdict(),)
+
+    @abstractmethod
+    def asdict(self) -> dict:
+        """
+        Create a dictionary containing the fields of the item data class instance with their current values.
+
+        :return: A dictionary with field names as keys and current values.
+        """
+        pass
+
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, item_dict: dict):
+        """
+        Convert a dictionary to an item.
+
+        :param item_dict: The dictionary representation of the item
+
+        :return: An item object
+        """
+        pass
+
+
+
 @dataclass
-class maaf_list_dataclass:
+class MaafList:
     items: list = field(default_factory=list)
     item_class = None
 
@@ -159,6 +190,12 @@ class maaf_list_dataclass:
             f"!!! Get item by index failed: {self.item_class} with id '{item_id}' does not exist in the item log !!!")
         return None
 
+    def __reduce__(self):
+        """
+        Reduce the item log
+        """
+        return self.__class__, (self.items,)
+
     # ============================================================== Set
     def update_item_fields(self,
                            item: int or str or item_class,
@@ -307,54 +344,4 @@ class maaf_list_dataclass:
 
         :return: A list of dictionaries containing the fields of the items in the item log.
         """
-        return [item.to_dict() for item in self.items]
-
-
-# @dataclass(frozen=True)
-@dataclass
-class State:
-    timestamp: float           # The timestamp of the state
-
-    def __str__(self) -> str:
-        return self.__repr__()
-
-    # ============================================================== To
-    def to_dict(self) -> dict:
-        """
-        Create a dictionary containing the fields of the State data class instance with their current values.
-
-        :return: A dictionary with field names as keys and current values.
-        """
-        # -> Get the fields of the State class
-        state_fields = fields(self)
-
-        # -> Create a dictionary with field names as keys and their current values
-        fields_dict = {f.name: getattr(self, f.name) for f in state_fields}
-
-        return fields_dict
-
-    # ============================================================== From
-    @classmethod
-    def from_dict(cls, agent_dict: dict) -> "State":
-        """
-        Convert a dictionary to a state.
-
-        :param agent_dict: The dictionary representation of the state
-
-        :return: An agent object
-        """
-        # -> Get the fields of the Agent class
-        agent_fields = fields(cls)
-
-        # -> Extract field names from the fields
-        field_names = {field.name for field in agent_fields}
-
-        # -> Check if all required fields are present in the dictionary
-        if not field_names.issubset(agent_dict.keys()):
-            raise ValueError(f"!!! Agent creation from dictionary failed: Agent dictionary is missing required fields: {agent_dict.keys() - field_names} !!!")
-
-        # -> Extract values from the dictionary for the fields present in the class
-        field_values = {field.name: agent_dict[field.name] for field in agent_fields}
-
-        # -> Create and return an Agent object
-        return cls(**field_values)
+        return [item.asdict() for item in self.items]

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
-from .dataclass_cores import maaf_list_dataclass
+from .dataclass_cores import MaafList, MaafItem
 from .state_dataclasses import Agent_state
 from copy import deepcopy
 
@@ -9,7 +9,7 @@ DEBUG = True
 
 
 @dataclass
-class Agent:
+class Agent(MaafItem):
     id: str                                 # ID of the agent
     name: str                               # Name of the agent
     agent_class: str                        # Class of the agent
@@ -28,6 +28,13 @@ class Agent:
     def __str__(self) -> str:
         return self.__repr__()
 
+    def has_state(self, state: Agent_state) -> bool:
+        """
+        Check if all the fields of the state match the fields of the agent's state
+        """
+
+        return self.state == state
+
     def has_skill(self, skill: str) -> bool:
         """
         Check if the agent has a given skill
@@ -41,7 +48,7 @@ class Agent:
         return affiliation in self.affiliations
 
     # ============================================================== To
-    def to_dict(self) -> dict:
+    def asdict(self) -> dict:
         """
         Create a dictionary containing the fields of the Agent data class instance with their current values.
 
@@ -57,7 +64,7 @@ class Agent:
         fields_dict = {f.name: getattr(self, f.name) for f in agent_fields}
 
         # -> Convert state to dict
-        fields_dict["state"] = self.state.to_dict()
+        fields_dict["state"] = self.state.asdict()
 
         return fields_dict
 
@@ -95,7 +102,7 @@ class Agent:
         return cls(**field_values)
 
 @dataclass
-class Fleet(maaf_list_dataclass):
+class Fleet(MaafList):
     item_class = Agent
     __on_state_change_listeners: list[callable] = field(default_factory=list)
 
@@ -290,9 +297,9 @@ if "__main__" == __name__:
         )
     )
     print(agent1)
-    print(agent1.to_dict())
+    print(agent1.asdict())
 
-    agent2 = Agent.from_dict(agent1.to_dict())
+    agent2 = Agent.from_dict(agent1.asdict())
     print(agent2)
 
     # Test Fleet data class

@@ -7,6 +7,7 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 
 # Built-in/Generic Imports
 import os
+import time
 from random import randint
 from json import dumps, loads
 from typing import List, Optional, Tuple
@@ -24,11 +25,12 @@ from rclpy.time import Time
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseStamped, Point
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
+from networkx import astar_path, shortest_path
 
 # Local Imports
 from .node_config import *
 from .maaf_agent import MAAFAgent
-from .dataclass_cores import maaf_list_dataclass
+from .dataclass_cores import MaafList
 from .task_dataclasses import Task, Task_log
 from .fleet_dataclasses import Agent, Fleet
 from .state_dataclasses import Agent_state
@@ -60,7 +62,10 @@ class maaf_allocation_node(MAAFAgent):
         # -----------------------------------  Confirm initialisation
         self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
 
+        # -> Initial publish to announce the agent to the fleet and share initial state
+        time.sleep(2)
         self.publish_allocation_state_msg()
+        self.publish_goal_msg(task_id=None, meta_action="empty")
 
     # ============================================================== PROPERTIES
     def __setup_allocation_additional_states(self) -> None:
@@ -128,23 +133,23 @@ class maaf_allocation_node(MAAFAgent):
             if task.id in self.task_log.ids:
                 return
 
-            # TODO: Remove this line once task creation handles stamp creation
-            task.creation_timestamp = self.current_timestamp
-
-        elif task_msg.meta_action == "completed":
-            task.termination_timestamp = self.current_timestamp
-            # TODO: Finish implementing task completion
-
-        elif task_msg.meta_action == "cancelled":
-            task.termination_timestamp = self.current_timestamp
-            # TODO: Implement task cancel
-            pass
+        #     # TODO: Remove this line once task creation handles stamp creation
+        #     task.creation_timestamp = self.current_timestamp
+        #
+        # elif task_msg.meta_action == "completed":
+        #     task.termination_timestamp = self.current_timestamp
+        #     # TODO: Finish implementing task completion
+        #
+        # elif task_msg.meta_action == "cancelled":
+        #     task.termination_timestamp = self.current_timestamp
+        #     # TODO: Implement task cancel
+        #     pass
 
         # -> Update situation awareness
         self.__update_situation_awareness(task_list=[task], fleet=None)
 
         # -> Select task
-        self.update_allocation()
+        self.update_allocation(reset_assignment=recompute_bids_on_state_change) # TODO: Cleanup
 
         # -> Update previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
@@ -219,7 +224,7 @@ class maaf_allocation_node(MAAFAgent):
                 )
 
         # -> Select new task
-        self.update_allocation()
+        self.update_allocation(reset_assignment=recompute_bids_on_state_change) # TODO: Cleanup
 
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
@@ -400,6 +405,9 @@ class maaf_allocation_node(MAAFAgent):
                     terminate_task(task=task)
                     task_list_edit = True
 
+                else:
+                    pass
+
         # -> If task list has been updated, compute bids
         if task_list_edit:
             self.compute_bids()
@@ -541,10 +549,10 @@ class maaf_allocation_node(MAAFAgent):
                 compute_bids = True
 
             # > If bids are outdated, compute bids
-            elif task.local["bid(s)_reference_state"] != self.agent.state:
+            elif task.local["bid(s)_reference_state"] != self.agent.state and recompute_bids_on_state_change:
                 compute_bids = True
 
-            # -> Compute bids if necessary
+            # -> Re-compute bids if necessary
             if compute_bids:
                 # -> List agents to compute bids for
                 # TODO: Clean up
@@ -556,16 +564,41 @@ class maaf_allocation_node(MAAFAgent):
                 # -> Compute bids
                 self.bid(task=task, agent_lst=agent_lst)
 
-    def update_allocation(self):
+            # TODO: Cleanup
+            # -> Recompute path to task for self if necessary
+            elif task.local["bid(s)_reference_state"] != self.agent.state:
+                # -> Agent node
+                agent_node = (self.agent.state.x, self.agent.state.y)
+
+                # -> Task node
+                task_node = (task.instructions["x"], task.instructions["y"])
+
+                # -> Find the Manhattan distance between the agent and the task
+                path = shortest_path(self.env["graph"], agent_node, task_node)
+                # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+                # > Get path x and y
+                path_x = [node[0] for node in path]
+                path_y = [node[1] for node in path]
+
+                # > Store path to task local
+                task.shared["path"] = {
+                    "x": path_x,
+                    "y": path_y
+                }
+
+    def update_allocation(self, reset_assignment: bool = False) -> None:
         """
         Select a task to bid for based on the current state
         1. Merge local states with shared states and update local states if necessary
         2. If no task is assigned to self, select a task
+
+        :param reset_assignment: Flag to reset the current assignment
         """
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
-
         if self.allocation_state_change:
+
             # > For each task ...
             for task_id in self.task_log.ids_pending:
                 # > For each agent ...
@@ -602,6 +635,16 @@ class maaf_allocation_node(MAAFAgent):
                             self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
 
         # ---- Select task
+        # # -> If reset assignment, reset the task list
+        # if reset_assignment:
+        #     self.task_list_x = pd.DataFrame(
+        #         np.zeros((self.Task_count_N_t, 1)),
+        #         index=self.task_log.ids_pending,
+        #         columns=["task_list_x"]
+        #     )
+        #
+        #     self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+
         # -> If no task is assigned to self, select a task
         if self.task_list_x["task_list_x"].sum() == 0:
             # -> Create list of valid tasks (pandas series of task ids initialised as 0)
@@ -639,18 +682,18 @@ class maaf_allocation_node(MAAFAgent):
                 valid_tasks = valid_tasks_list_h[valid_tasks_list_h["valid_tasks_list_h"] == 1].index.to_list()
 
                 # > Get valid task with largest bid
-                selected_task = self.shared_bids_b.loc[valid_tasks, self.id].idxmax()
+                selected_task_id = self.shared_bids_b.loc[valid_tasks, self.id].idxmax()
 
                 # -> Add task to the task list
-                self.task_list_x.loc[selected_task, "task_list_x"] = 1
+                self.task_list_x.loc[selected_task_id, "task_list_x"] = 1
 
                 # -> Update winning bids
-                self.winning_bids_y.loc[selected_task, "winning_bids_y"] = self.shared_bids_b.loc[selected_task, self.id]
+                self.winning_bids_y.loc[selected_task_id, "winning_bids_y"] = self.shared_bids_b.loc[selected_task_id, self.id]
 
-                self.get_logger().info(f"{self.id} + Assigning task {selected_task} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 5)} - Pending task count: {len(self.task_log.ids_pending)})")
+                self.get_logger().info(f"{self.id} + Assigning task {selected_task_id} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 5)} - Pending task count: {len(self.task_log.ids_pending)})")
 
                 # -> Assign goal
-                self.publish_goal_msg(task_id=selected_task, meta_action="assign")
+                self.publish_goal_msg(task_id=selected_task_id, meta_action="assign")
 
     # ---------------- tools
     # >>>> Prints

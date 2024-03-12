@@ -700,8 +700,8 @@ class MAAFAgent(Node):
 
         # -> Call pose update listeners
         self.call_on_pose_update_listeners()
-        
-        self.publish_allocation_state_msg()     # TODO: Cleanup
+
+        # self.publish_allocation_state_msg()     # TODO: Cleanup
 
         # self.get_logger().info(f"         < Received state update ({self.agent.state.x},{self.agent.state.y},{self.agent.state.z})")
 
@@ -893,7 +893,8 @@ class MAAFAgent(Node):
             agent_lst=agent_lst,
             shared_bids_b=self.shared_bids_b,
             environment=self.env,
-            logger=self.get_logger()
+            logger=self.get_logger(),
+            self_agent=self.agent
         )
 
         # -> Store bids to local bids matrix
@@ -905,7 +906,7 @@ class MAAFAgent(Node):
             self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
         # -> Set task bid reference state
-        task.local["bid(s)_reference_state"] = self.agent.state
+        task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
 
         return task_bids
 
@@ -937,12 +938,12 @@ class MAAFAgent(Node):
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
 
-    def publish_goal_msg(self, task_id: str, meta_action: str):
+    def publish_goal_msg(self, task_id: Optional[str] = None, meta_action: str = "empty"):
         """
         Publish goal to the robot's goal topic for execution as TeamCommStamped message
 
         :param task_id: task id
-        :param meta_action: action to take, can be "assign" or "cancel"
+        :param meta_action: action to take, can be "assign" or "cancel" or "empty"
         """
 
         # -> Create message
@@ -954,16 +955,23 @@ class MAAFAgent(Node):
 
         # > Tracker
         msg.source = self.id
-        msg.target = task_id
-
         msg.meta_action = meta_action
 
-        # msg.memo = dumps(self.task_log[task_id].to_dict())    # TODO: Cleanup
-        memo = {
-            "agent": self.agent.to_dict(),
-            "task": self.task_log[task_id].to_dict()
-        }
+        if task_id is not None:
+            msg.target = task_id
 
+            # msg.memo = dumps(self.task_log[task_id].asdict())    # TODO: Cleanup
+            memo = {
+                "agent": self.agent.asdict(),
+                "task": self.task_log[task_id].asdict()
+            }
+
+        else:
+            msg.target = "all"
+
+            memo = {"agent": self.agent.asdict()}
+
+        # > Dump memo
         msg.memo = dumps(memo)
 
         # -> Publish message

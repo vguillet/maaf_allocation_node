@@ -2,13 +2,13 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
-from .dataclass_cores import maaf_list_dataclass
+from .dataclass_cores import MaafList, MaafItem
 
 DEBUG = True
 
 
 @dataclass
-class Task:
+class Task(MaafItem):
     """
     Dataclass to represent a task in the maaf allocation framework.
     """
@@ -45,7 +45,7 @@ class Task:
         return affiliation in self.affiliations
 
     # ============================================================== To
-    def to_dict(self) -> dict:
+    def asdict(self) -> dict:
         """
         Create a dictionary containing the fields of the Task data class instance with their current values.
 
@@ -94,7 +94,7 @@ class Task:
 
 
 @dataclass
-class Task_log(maaf_list_dataclass):
+class Task_log(MaafList):
     item_class = Task
     __on_status_change_listeners: list[callable] = field(default_factory=list)
 
@@ -325,9 +325,9 @@ if "__main__" == __name__:
         creation_timestamp=datetime.now()
     )
     # print(task_1)
-    # print(task_1.to_dict())
+    # print(task_1.asdict())
 
-    task_2 = Task.from_dict(task_1.to_dict())
+    task_2 = Task.from_dict(task_1.asdict())
     # print(task_2)
 
     # Test Task_log dataclass

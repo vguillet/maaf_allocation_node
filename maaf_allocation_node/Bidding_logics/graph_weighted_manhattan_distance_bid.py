@@ -5,7 +5,7 @@
 import random
 
 # Libs
-from networkx import astar_path
+from networkx import astar_path, shortest_path
 
 # Own modules
 from maaf_allocation_node.fleet_dataclasses import Agent, Fleet
@@ -19,7 +19,9 @@ def graph_weighted_manhattan_distance_bid(
         agent_lst: list[Agent], 
         shared_bids_b,
         environment, 
-        logger
+        logger,
+        *args,
+        **kwargs
     ) -> list[dict]:
     """
     Calculate the weighted Manhattan distance between a task and a list of agents.
@@ -39,7 +41,7 @@ def graph_weighted_manhattan_distance_bid(
     valid_agents = []
 
     for agent in agent_lst:
-        if task.type in agent.skillset:
+        if agent.has_skill(task.type):
             valid_agents.append(agent)
         else:
             bids.append({
@@ -57,7 +59,9 @@ def graph_weighted_manhattan_distance_bid(
         task_node = (task.instructions["x"], task.instructions["y"])
 
         # -> Find the weigthed Manhattan distance between the agent and the task
-        path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+        path = shortest_path(environment["graph"], agent_node, task_node)
+        # path = astar_path(environment["graph"], agent_node, task_node)
+        # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
         # > Get path x and y
         path_x = [node[0] for node in path]
@@ -70,9 +74,11 @@ def graph_weighted_manhattan_distance_bid(
         }
 
         # -> Calculate the total distance
-        total_distance = random.uniform(00.00000000001, 0.1)
-        for i in range(len(path) - 1):
-            total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
+        total_distance = random.uniform(0.00000000001, 0.0000001)    # Start with random tiny number to avoid division by zero and ties in allocation
+        # for i in range(len(path) - 1):
+        #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
+
+        total_distance += len(path)
 
         # -> Add bid to the list
         bids.append({
