@@ -11,7 +11,7 @@ from networkx import astar_path, shortest_path
 # Own modules
 from maaf_allocation_node.fleet_dataclasses import Agent, Fleet
 from maaf_allocation_node.task_dataclasses import Task
-from maaf_allocation_node.node_config import *
+from maaf_allocation_node.Bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 ##################################################################################################################
 
@@ -39,39 +39,49 @@ def anticipated_action_task_interceding_agent(
 
     bids = []
 
-    # -> If task is not a GOTO task, only consider self agent
-    if task.type != "GOTO":
-        if kwargs["self_agent"].has_skill(task.type):
-            valid_agents = [kwargs["self_agent"]]
+    # -> Compute base bid for self
+    bids.append(
+        graph_weighted_manhattan_distance_bid(
+            task=task,
+            agent_lst=[kwargs["self_agent"]],
+            shared_bids_b=shared_bids_b,
+            environment=environment,
+            logger=logger,
+            self_agent=kwargs["self_agent"],  # TODO: Cleanup
+            intercession_targets=kwargs["intercession_targets"]  # TODO: Cleanup
+        )[0]
+    )
+
+    # -> Filter agents unable to take on task
+    filtered_agents = []
+
+    for agent in agent_lst:
+        if agent.has_skill(task.type):
+            filtered_agents.append(agent)
+        # -> Else, do not bid
         else:
-            bids.append({
-                "agent_id": kwargs["self_agent"].id,
-                "bid": 0,
-                "allocation": 0
-            })
+            pass
 
-            return bids
+    agent_lst = filtered_agents
 
-    else:
-        # -> Check the agents skillset against the task instructions
-        valid_agents = []
+    # -> Check the agents skillset against the task instructions
+    valid_agents = []
 
+    if task.type in kwargs["intercession_targets"]:
         for agent in agent_lst:
             # -> If the goto leads to a task ACTION_1 and the agent has the ACTION_1 skillset and the agent is in the intercession_targets list
-            if task.instructions["ACTION_AT_LOC"] in ["ACTION_1", "NO_TASK"] and agent.has_skill("ACTION_1") and "ACTION_1" in intercession_targets:
+            if task.instructions["ACTION_AT_LOC"] in ["ACTION_1", "NO_TASK"] and agent.has_skill("ACTION_1"):
+            # if task.instructions["ACTION_AT_LOC"] in ["ACTION_1"] and not agent.has_skill("ACTION_1"):
                 valid_agents.append(agent)
 
             # -> Elif the goto leads to a task ACTION_2 and the agent has the ACTION_2 skillset and the agent is in the intercession_targets list
-            elif task.instructions["ACTION_AT_LOC"] == ["ACTION_2", "NO_TASK"] and agent.has_skill("ACTION_2") and "ACTION_2" in intercession_targets:
+            elif task.instructions["ACTION_AT_LOC"] in ["ACTION_2", "NO_TASK"] and agent.has_skill("ACTION_2"):
+            # elif task.instructions["ACTION_AT_LOC"] in ["ACTION_2"] and not agent.has_skill("ACTION_2"):
                 valid_agents.append(agent)
 
             # -> Else, do not bid
             else:
-                bids.append({
-                    "agent_id": agent.id,
-                    "bid": 0,
-                    "allocation": 0
-                })
+                pass
 
     # -> Calculate the weighted Manhattan distance for all valid agents
     for agent in valid_agents:
@@ -83,7 +93,6 @@ def anticipated_action_task_interceding_agent(
 
         # -> Find the weigthed Manhattan distance between the agent and the task
         path = shortest_path(environment["graph"], agent_node, task_node)
-        # path = astar_path(environment["graph"], agent_node, task_node)
         # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
         # > Get path x and y
@@ -91,24 +100,21 @@ def anticipated_action_task_interceding_agent(
         path_y = [node[1] for node in path]
 
         # > Store path to task local
-        task.shared["path"] = {
+        task.local["path"] = {
             "x": path_x,
             "y": path_y
         }
 
         # -> Calculate the total distance
-        total_distance = random.uniform(0.00000000001, 0.0000001)    # Start with random tiny number to avoid division by zero and ties in allocation
+        total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation
 
         # for i in range(len(path) - 1):
         #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 
         total_distance += len(path) -1
 
-        if task.type == "GOTO":
-            # -> Add bias
-            total_distance = total_distance / 10
-
-        # logger.info(f"{task.id}: {agent_node}->{task_node}: {len(path)-1}, bid: {1/total_distance}")
+        # -> Add bias
+        total_distance = total_distance / 10000
 
         # -> Add bid to the list
         bids.append({
@@ -121,6 +127,5 @@ def anticipated_action_task_interceding_agent(
 
     # for i, agent in enumerate(agent_lst):
     #     logger.info(f"Agent {agent.id} has skillset: {agent.skillset}")
-
 
     return bids

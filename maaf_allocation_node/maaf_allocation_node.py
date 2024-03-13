@@ -28,7 +28,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from networkx import astar_path, shortest_path
 
 # Local Imports
-from .node_config import *
+# from .node_config import *
 from .maaf_agent import MAAFAgent
 from .dataclass_cores import MaafList
 from .task_dataclasses import Task, Task_log
@@ -60,8 +60,6 @@ class maaf_allocation_node(MAAFAgent):
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # -----------------------------------  Confirm initialisation
-        self.get_logger().info(f"MAAF agent {self.id}: Allocation node initialised ({ALLOCATION_METHOD})")
-
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
         self.publish_allocation_state_msg()
@@ -149,7 +147,7 @@ class maaf_allocation_node(MAAFAgent):
         self.__update_situation_awareness(task_list=[task], fleet=None)
 
         # -> Select task
-        self.update_allocation(reset_assignment=recompute_bids_on_state_change) # TODO: Cleanup
+        self.update_allocation(reset_assignment=self.scenario.recompute_bids_on_state_change)   # TODO: Cleanup
 
         # -> Update previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
@@ -197,7 +195,7 @@ class maaf_allocation_node(MAAFAgent):
         # > Convert fleet to Agent objects
         received_fleet = [Agent.from_dict(agent) for agent in received_allocation_state["fleet"]]
 
-        self.__update_situation_awareness(
+        task_state_change, fleet_state_change = self.__update_situation_awareness(
             task_list=received_task_log,
             fleet=received_fleet
         )
@@ -224,7 +222,7 @@ class maaf_allocation_node(MAAFAgent):
                 )
 
         # -> Select new task
-        self.update_allocation(reset_assignment=recompute_bids_on_state_change) # TODO: Cleanup
+        self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change) # TODO: Cleanup
 
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
@@ -234,7 +232,7 @@ class maaf_allocation_node(MAAFAgent):
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # >>>> CBAA
-    def __update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
+    def __update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> Tuple[bool, bool]:
         """
         Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
         local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
@@ -242,6 +240,8 @@ class maaf_allocation_node(MAAFAgent):
 
         :param task_list: Tasks dict
         :param fleet: Fleet dict
+
+        :return: Tuple of bools (task_state_change, fleet_state_change)
         """
         
         def add_agent(agent: Agent) -> None:
@@ -361,6 +361,8 @@ class maaf_allocation_node(MAAFAgent):
                     pass
 
         # ---- Add new tasks and agents
+        fleet_state_change = False
+
         # -> Update local fleet
         if fleet is not None:
             for agent in fleet:
@@ -369,6 +371,7 @@ class maaf_allocation_node(MAAFAgent):
                     # -> If the agent is active, add to fleet and extend local states with new columns
                     if agent.state.status == "active":
                         add_agent(agent=agent)
+                        fleet_state_change = True
 
                     # -> If the agent is inactive, only add to the local fleet
                     else:
@@ -379,13 +382,15 @@ class maaf_allocation_node(MAAFAgent):
                     # -> If the agent is active, update the agent state in the fleet to the latest state
                     if agent.state.status == "active":
                         self.fleet.set_agent_state(agent=agent, state=agent.state)
+                        fleet_state_change = True
 
                     # -> If the agent is inactive, update state and remove agent from local states
                     else:
                         remove_agent(agent=agent)
+                        fleet_state_change = True
 
         # -> Update task log and local states
-        task_list_edit = False
+        task_state_change = False
 
         if task_list is not None:
             for task in task_list:
@@ -394,7 +399,7 @@ class maaf_allocation_node(MAAFAgent):
                     # -> If the task is pending, add to task log and extend local states with new rows
                     if task.status == "pending":
                         add_task(task=task)
-                        task_list_edit = True
+                        task_state_change = True
 
                     # -> If the task is completed, only add to the task log (do not recompute bids)
                     else:
@@ -403,14 +408,16 @@ class maaf_allocation_node(MAAFAgent):
                 # -> Else if the task is in the task log and is not pending, flag as terminated in task log and remove rows from the local states
                 elif task.status != "pending" and self.task_log[task.id].status == "pending":
                     terminate_task(task=task)
-                    task_list_edit = True
+                    task_state_change = True
 
                 else:
                     pass
 
         # -> If task list has been updated, compute bids
-        if task_list_edit:
+        if task_state_change:
             self.compute_bids()
+
+        return task_state_change, fleet_state_change
 
     def __update_shared_states(
             self,
@@ -548,8 +555,8 @@ class maaf_allocation_node(MAAFAgent):
             if "bid(s)_reference_state" not in task.local.keys():
                 compute_bids = True
 
-            # > If bids are outdated, compute bids
-            elif task.local["bid(s)_reference_state"] != self.agent.state and recompute_bids_on_state_change:
+            # > If bids are outdated and recompute on state change is enabled, compute bids # TODO: Review
+            elif task.local["bid(s)_reference_state"] != self.agent.state and self.scenario.recompute_bids_on_state_change:
                 compute_bids = True
 
             # -> Re-compute bids if necessary
@@ -635,15 +642,28 @@ class maaf_allocation_node(MAAFAgent):
                             self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
 
         # ---- Select task
-        # # -> If reset assignment, reset the task list
-        # if reset_assignment:
-        #     self.task_list_x = pd.DataFrame(
-        #         np.zeros((self.Task_count_N_t, 1)),
-        #         index=self.task_log.ids_pending,
-        #         columns=["task_list_x"]
-        #     )
-        #
-        #     self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+        # -> If reset assignment, reset the task list
+        if reset_assignment:
+            # -> Unassign task if currently assigned
+            if self.task_list_x["task_list_x"].sum() != 0:
+                # -> Find currently assigned task
+                task_id = self.task_list_x[self.task_list_x["task_list_x"] == 1].index[0]
+
+                # -> Cancel goal
+                self.publish_goal_msg(task_id=task_id, meta_action="unassign")
+
+                # -> Reset allocation states
+                self.task_list_x = pd.DataFrame(
+                    np.zeros((self.Task_count_N_t, 1)),
+                    index=self.task_log.ids_pending,
+                    columns=["task_list_x"]
+                )
+
+                self.winning_bids_y = pd.DataFrame(
+                    np.zeros((self.Task_count_N_t, 1)),
+                    index=self.task_log.ids_pending,
+                    columns=["winning_bids_y"]
+                )
 
         # -> If no task is assigned to self, select a task
         if self.task_list_x["task_list_x"].sum() == 0:
@@ -861,7 +881,7 @@ class maaf_allocation_node(MAAFAgent):
         """
 
         # -> If source priority is higher
-        if priority_source_ij > priority_updated_ij:
+        if priority_source_ij > priority_updated_ij and matrix_source_ij > 0:
 
             # -> Update matrix value with source matrix value
             matrix_updated_ij = matrix_source_ij

@@ -74,11 +74,11 @@ def graph_weighted_manhattan_distance_bid(
         }
 
         # -> Calculate the total distance
-        total_distance = random.uniform(0.00000000001, 0.0000001)    # Start with random tiny number to avoid division by zero and ties in allocation
+        total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation
         # for i in range(len(path) - 1):
         #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 
-        total_distance += len(path)
+        total_distance += len(path) -1
 
         # -> Add bid to the list
         bids.append({

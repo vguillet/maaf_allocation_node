@@ -19,6 +19,7 @@ CAF:
 """
 
 # Built-in/Generic Imports
+import sys
 import os
 from abc import abstractmethod
 from typing import List, Optional
@@ -46,14 +47,12 @@ from geometry_msgs.msg import Twist, PoseStamped, Point
 # NetworkX
 import networkx as nx
 
-# Matplotlib
-import matplotlib.pyplot as plt
-
-
 # Local Imports
 from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
+from maaf_allocation_node.node_config import *
+
 from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
-from .node_config import *
+from rlb_simple_sim.Scenario import Scenario
 from .task_dataclasses import Task, Task_log
 from .fleet_dataclasses import Agent, Fleet
 from .state_dataclasses import Agent_state
@@ -85,6 +84,19 @@ class MAAFAgent(Node):
             node_name=node_name,
         )
 
+        # TODO: Clean up
+        # -> Get launch parameters configuration
+        self.declare_parameters(
+            namespace="",
+            parameters=[
+                ("scenario_id", "simple_sim"),
+            ]
+        )
+
+        scenario_id = self.get_parameter("scenario_id").get_parameter_value().string_value
+
+        self.scenario = Scenario(scenario_id=scenario_id, load_only=True, logger=self.get_logger())
+
         # ---- Agent properties
         # > declare all parameters at once
         self.declare_parameters(namespace="", parameters=[("id", ""), ("name", "")])
@@ -108,7 +120,7 @@ class MAAFAgent(Node):
         if skillset is None:
             # self.skillset = self.get_parameter("skillset").get_parameter_value().string_array_value
             # TODO: Cleanup
-            self.skillset = skillsets[self.id]
+            self.skillset = self.scenario.fleet_skillsets[self.id]
         else:
             self.skillset = skillset
 
@@ -119,11 +131,14 @@ class MAAFAgent(Node):
             self.bid_evaluation_function = bid_estimator
 
         # TODO: Cleanup
-        if self.id in bid_function.keys():
-            if bid_function[self.id] == "graph_weighted_manhattan_distance_bid":
+        if self.id in self.scenario.fleet_bids_mechanisms.keys():
+            if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
                 self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
-            elif bid_function[self.id] == "anticipated_action_task_interceding_agent":
+                self.hierarchy_level = 0
+
+            elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
                 self.bid_evaluation_function = anticipated_action_task_interceding_agent
+                self.hierarchy_level = 1
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -153,8 +168,9 @@ class MAAFAgent(Node):
         # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
         self.get_logger().info(f"\n> Agent {self.id} initialised: " +
+                               f"\n     Hierarchy level: {self.hierarchy_level}" +
                                f"\n     Skillset: {self.skillset}" +
-                               f"\n     Bid evaluation: {self.bid_evaluation_function}"
+                               f"\n     Bid evaluation: {self.bid_evaluation_function}\n"
                                )
 
     # ============================================================== INIT
@@ -224,6 +240,14 @@ class MAAFAgent(Node):
         """
 
         # ----------------------------------- Subscribers
+        # ---------- simulator_signals
+        self.simulator_signals_sub = self.create_subscription(
+            msg_type=TeamCommStamped,
+            topic=topic_simulator_signals,
+            callback=self.simulator_signals_callback,
+            qos_profile=qos_simulator_signals
+        )
+
         if RUN_MODE == OPERATIONAL:
             # ---------- fleet_msgs
             self.fleet_msgs_sub = self.create_subscription(
@@ -300,9 +324,9 @@ class MAAFAgent(Node):
         )
 
         # ----------------------------------- Timers
-        # # ---- Fleet msg update timer
+        # ---- Fleet msg update timer
         # self.fleet_msg_update_timer = self.create_timer(
-        #     timer_period_sec=FLEET_MSG_UPDATE_TIMER,
+        #     timer_period_sec=0.1,
         #     callback=self.fleet_msg_update_timer_callback
         # )
 
@@ -648,6 +672,16 @@ class MAAFAgent(Node):
     # ============================================================== METHODS
     # ---------------- Callbacks
     # >>>> Base
+    def simulator_signals_callback(self, msg: TeamCommStamped):
+        if msg.meta_action == "order 66":
+            self.get_logger().info("Received order 66: Terminating simulation")
+
+            # -> Terminate node
+            self.destroy_node()
+
+            # -> Terminate script
+            sys.exit()
+
     def env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
         if self.env is None:    # TODO: Review env management logic
             self.get_logger().info(f"         < Received environment update")
@@ -894,7 +928,8 @@ class MAAFAgent(Node):
             shared_bids_b=self.shared_bids_b,
             environment=self.env,
             logger=self.get_logger(),
-            self_agent=self.agent
+            self_agent=self.agent,                                      # TODO: Cleanup
+            intercession_targets=self.scenario.intercession_targets     # TODO: Cleanup
         )
 
         # -> Store bids to local bids matrix
@@ -959,6 +994,9 @@ class MAAFAgent(Node):
 
         if task_id is not None:
             msg.target = task_id
+
+            # task_dict = deepcopy(self.task_log[task_id].asdict())
+            # task_dict["local"]["path"] = self.task_log[task_id].local["path"]
 
             # msg.memo = dumps(self.task_log[task_id].asdict())    # TODO: Cleanup
             memo = {
