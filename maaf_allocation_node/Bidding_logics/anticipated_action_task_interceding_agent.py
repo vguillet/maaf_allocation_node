@@ -67,7 +67,9 @@ def anticipated_action_task_interceding_agent(
     # -> Check the agents skillset against the task instructions
     valid_agents = []
 
-    if task.type in kwargs["intercession_targets"]:
+    # if task.type in kwargs["intercession_targets"]:
+    if task.instructions["ACTION_AT_LOC"] in kwargs["intercession_targets"]:
+
         for agent in agent_lst:
             # -> If the goto leads to a task ACTION_1 and the agent has the ACTION_1 skillset and the agent is in the intercession_targets list
             if task.instructions["ACTION_AT_LOC"] in ["ACTION_1", "NO_TASK"] and agent.has_skill("ACTION_1"):
@@ -100,10 +102,18 @@ def anticipated_action_task_interceding_agent(
         path_y = [node[1] for node in path]
 
         # > Store path to task local
-        task.local["path"] = {
+        # task.local["path"] = {
+        #     "x": path_x,
+        #     "y": path_y
+        # }
+
+        # agent.shared["path"][task.id] = {
+        agent.shared["tasks"][task.id]["path"] = {
             "x": path_x,
             "y": path_y
         }
+
+        print("=============================> WORKED")
 
         # -> Calculate the total distance
         total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation

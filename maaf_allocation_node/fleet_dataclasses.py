@@ -1,7 +1,7 @@
 from dataclasses import dataclass, fields, field
 from typing import List, Optional
 from datetime import datetime
-from .dataclass_cores import MaafList, MaafItem
+from .dataclass_cores import MaafList, MaafItem, NestedDict
 from .state_dataclasses import Agent_state
 from copy import deepcopy
 
@@ -19,8 +19,11 @@ class Agent(MaafItem):
     skillset: List[str]                     # Skillset of the agent
     state: Agent_state                      # State of the agent, state object
 
-    shared: dict = field(default_factory=dict)  # Shared data of the agent, gets serialized and passed around
-    local: dict = field(default_factory=dict)   # Local data of the agent, does not get serialized and passed around
+    shared: NestedDict = field(default_factory=NestedDict)  # Shared data of the agent, gets serialized and passed around
+    local: NestedDict = field(default_factory=NestedDict)   # Local data of the agent, does not get serialized and passed around
+
+    # shared: dict = field(default_factory=dict)  # Shared data of the agent, gets serialized and passed around
+    # local: dict = field(default_factory=dict)   # Local data of the agent, does not get serialized and passed around
 
     def __repr__(self) -> str:
         return f"Agent {self.name} ({self.id}) of class {self.agent_class} - Status: {self.state.status}"
