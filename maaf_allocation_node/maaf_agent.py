@@ -20,13 +20,9 @@ CAF:
 
 # Built-in/Generic Imports
 import sys
-import os
 from abc import abstractmethod
 from typing import List, Optional
-from datetime import datetime, timedelta
-from random import randint
 from json import dumps, loads
-from pprint import pprint, pformat
 import warnings
 from copy import deepcopy
 
@@ -49,18 +45,18 @@ import networkx as nx
 
 # Local Imports
 from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
-from maaf_allocation_node.node_config import *
+from orchestra_config.sim_config import *
 
 from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 from rlb_simple_sim.Scenario import Scenario
-from .task_dataclasses import Task, Task_log
-from .fleet_dataclasses import Agent, Fleet
-from .state_dataclasses import Agent_state
-from .tools import *
+from maaf_tools.datastructures.task_dataclasses import Task, Task_log
+from maaf_tools.datastructures.fleet_dataclasses import Agent, Fleet
+from maaf_tools.datastructures.state_dataclasses import Agent_state
+from maaf_tools.tools import *
 
-from .Bidding_logics.random_bid import random_bid
-from .Bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
-from .Bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+from .bidding_logics.random_bid import random_bid
+from .bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+from .bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
 
 ##################################################################################################################
 
@@ -183,12 +179,12 @@ class MAAFAgent(Node):
         # -> Create fleet object
         self.fleet = Fleet()
 
-        # -> Fill with initial data
-        # > Retrieve initial fleet data from parameters
-        fleet_data = []
-
+        # # -> Fill with initial data
+        # # > Retrieve initial fleet data from parameters
+        # fleet_data = []
+        #
         # > Add initial fleet data to the fleet object
-        self.fleet.from_list(item_dicts_list=fleet_data)
+        # self.fleet.from_dict(maaflist_dict=fleet_data)
 
         # -> Check if self is in the fleet, if not, add self to the fleet
         if self.id not in self.fleet.ids:
@@ -225,12 +221,12 @@ class MAAFAgent(Node):
         # -> Create task log object
         self.task_log = Task_log()
 
-        # -> Fill with initial data
-        # > Retrieve initial task data from parameters
-        task_log_data = []
-
-        # > Add initial task data to the task log object
-        self.task_log.from_list(item_dicts_list=task_log_data)
+        # # -> Fill with initial data
+        # # > Retrieve initial task data from parameters
+        # task_log_data = []
+        #
+        # # > Add initial task data to the task log object
+        # self.task_log.from_dict(maaflist_dict=task_log_data)
 
     def __setup_node_pubs_subs(self) -> None:
         """
@@ -600,7 +596,7 @@ class MAAFAgent(Node):
                 serialised_state = {}
 
                 for key, value in self.state_awareness.items():
-                    serialised_state[key] = value.to_list()
+                    serialised_state[key] = value.asdict()
 
                 state = {**state, **serialised_state}
 

@@ -9,9 +9,9 @@ from pprint import pformat
 from networkx import astar_path, shortest_path
 
 # Own modules
-from maaf_allocation_node.fleet_dataclasses import Agent, Fleet
-from maaf_allocation_node.task_dataclasses import Task
-from maaf_allocation_node.Bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+from maaf_tools.datastructures.fleet_dataclasses import Agent, Fleet
+from maaf_tools.datastructures.task_dataclasses import Task
+from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 ##################################################################################################################
 
@@ -102,16 +102,16 @@ def anticipated_action_task_interceding_agent(
         path_y = [node[1] for node in path]
 
         # > Store path to task local
-        # task.local["path"] = {
-        #     "x": path_x,
-        #     "y": path_y
-        # }
-
-        # agent.shared["path"][task.id] = {
-        agent.shared["tasks"][task.id]["path"] = {
+        task.local["path"] = {
             "x": path_x,
             "y": path_y
         }
+
+        # agent.shared["path"][task.id] = {
+        # agent.shared["tasks"][task.id]["path"] = {
+        #     "x": path_x,
+        #     "y": path_y
+        # }
 
         print("=============================> WORKED")
 
