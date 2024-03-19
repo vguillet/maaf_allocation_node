@@ -9,8 +9,13 @@ from pprint import pformat
 from networkx import astar_path, shortest_path
 
 # Own modules
-from maaf_tools.datastructures.fleet_dataclasses import Agent, Fleet
-from maaf_tools.datastructures.task_dataclasses import Task
+from maaf_tools.datastructures.task.Task import Task
+from maaf_tools.datastructures.task.TaskLog import TaskLog
+
+from maaf_tools.datastructures.agent.Agent import Agent
+from maaf_tools.datastructures.agent.Fleet import Fleet
+from maaf_tools.datastructures.agent.AgentState import AgentState
+
 from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 ##################################################################################################################
@@ -101,19 +106,8 @@ def anticipated_action_task_interceding_agent(
         path_x = [node[0] for node in path]
         path_y = [node[1] for node in path]
 
-        # > Store path to task local
-        task.local["path"] = {
-            "x": path_x,
-            "y": path_y
-        }
-
-        # agent.shared["path"][task.id] = {
-        # agent.shared["tasks"][task.id]["path"] = {
-        #     "x": path_x,
-        #     "y": path_y
-        # }
-
-        print("=============================> WORKED")
+        # > Store path to agent local
+        task.local["path_for_current_bid"] = path
 
         # -> Calculate the total distance
         total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation

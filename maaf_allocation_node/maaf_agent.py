@@ -49,9 +49,15 @@ from orchestra_config.sim_config import *
 
 from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 from rlb_simple_sim.Scenario import Scenario
-from maaf_tools.datastructures.task_dataclasses import Task, Task_log
-from maaf_tools.datastructures.fleet_dataclasses import Agent, Fleet
-from maaf_tools.datastructures.state_dataclasses import Agent_state
+
+from maaf_tools.datastructures.task.Task import Task
+from maaf_tools.datastructures.task.TaskLog import TaskLog
+
+from maaf_tools.datastructures.agent.Agent import Agent
+from maaf_tools.datastructures.agent.Fleet import Fleet
+from maaf_tools.datastructures.agent.AgentState import AgentState
+from maaf_tools.datastructures.agent.Plan import Plan
+
 from maaf_tools.tools import *
 
 from .bidding_logics.random_bid import random_bid
@@ -68,7 +74,7 @@ class MAAFAgent(Node):
             id: str = None,
             name: str = None,
             skillset: List[str] = None,
-            bid_estimator = None
+            bid_estimator=None
         ):
         """
         maaf agent class
@@ -198,7 +204,7 @@ class MAAFAgent(Node):
                     specs=self.specs,
                     skillset=self.skillset,
                     # TODO: Implement state init
-                    state=Agent_state(
+                    state=AgentState(
                         agent_id=self.id,
                         timestamp=self.current_timestamp,
                         battery_level=100,
@@ -209,6 +215,10 @@ class MAAFAgent(Node):
                         u=0,
                         v=0,
                         w=0
+                    ),
+                    plan=Plan(
+                        task_bundle=[],
+                        path=[]
                     )
                 )
             )
@@ -219,7 +229,7 @@ class MAAFAgent(Node):
         Tasks are created using the self.create_task method
         """
         # -> Create task log object
-        self.task_log = Task_log()
+        self.task_log = TaskLog()
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
@@ -991,16 +1001,19 @@ class MAAFAgent(Node):
         if task_id is not None:
             msg.target = task_id
 
+            # TODO: Cleanup
             # task_dict = deepcopy(self.task_log[task_id].asdict())
             # task_dict["local"]["path"] = self.task_log[task_id].local["path"]
-
             # msg.memo = dumps(self.task_log[task_id].asdict())    # TODO: Cleanup
+
             memo = {
                 "agent": self.agent.asdict(),
                 "task": self.task_log[task_id].asdict()
+                # "task": task_dict
             }
 
         else:
+            # TODO: Cleanup (used to push msg to all channel to init all trackers across nodes
             msg.target = "all"
 
             memo = {"agent": self.agent.asdict()}

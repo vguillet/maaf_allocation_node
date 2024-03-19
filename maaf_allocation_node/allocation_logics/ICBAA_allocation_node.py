@@ -28,11 +28,18 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 from networkx import astar_path, shortest_path
 
 # Local Imports
-# from .node_config import *
+from orchestra_config.sim_config import *
 from maaf_allocation_node.maaf_agent import MAAFAgent
-from maaf_tools.datastructures.task_dataclasses import Task, Task_log
-from maaf_tools.datastructures.fleet_dataclasses import Agent, Fleet
+
+from maaf_tools.datastructures.task.Task import Task
+from maaf_tools.datastructures.task.TaskLog import TaskLog
+
+from maaf_tools.datastructures.agent.Agent import Agent
+from maaf_tools.datastructures.agent.Fleet import Fleet
+from maaf_tools.datastructures.agent.Plan import Plan
+
 from maaf_tools.tools import *
+
 from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 from maaf_allocation_node.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
 
@@ -187,16 +194,10 @@ class ICBAANode(MAAFAgent):
 
         # -> Update local situation awareness
         # > Convert received serialised task_log to task_log
-        received_task_log = Task_log.from_dict(received_allocation_state["tasks"])
+        received_task_log = TaskLog.from_dict(received_allocation_state["tasks"])
 
         # > Convert received serialised fleet to fleet
         received_fleet = Fleet.from_dict(received_allocation_state["fleet"])
-
-        # # > Convert task list to Task objects
-        # received_task_log = [Task.from_dict(task) for task in received_allocation_state["tasks"]]
-        #
-        # # > Convert fleet to Agent objects
-        # received_fleet = [Agent.from_dict(agent) for agent in received_allocation_state["fleet"]]
 
         task_state_change, fleet_state_change = self.__update_situation_awareness(
             task_list=received_task_log,
@@ -346,6 +347,12 @@ class ICBAANode(MAAFAgent):
 
             # -> Cancel goal if task is assigned to self
             if self.task_list_x.loc[task.id, "task_list_x"] == 1:
+                # # -> Remove task from plan bundle
+                # self.agent.plan.task_bundle.remove(task)
+                #
+                # # -> Flag plan as recompute
+                # self.agent.plan.recompute = True
+
                 # -> Cancel goal
                 self.publish_goal_msg(task_id=task.id, meta_action="unassign")
 
@@ -385,6 +392,8 @@ class ICBAANode(MAAFAgent):
                     # -> If the agent is active, update the agent state in the fleet to the latest state
                     if agent.state.status == "active":
                         self.fleet.set_agent_state(agent=agent, state=agent.state)
+                        self.fleet.set_agent_plan(agent=agent, plan=agent.plan)
+
                         fleet_state_change = True
 
                     # -> If the agent is inactive, update state and remove agent from local states
@@ -554,7 +563,7 @@ class ICBAANode(MAAFAgent):
             # -> Check bid reference state
             compute_bids = False
 
-            # > If bids where never computed for the task, compute bids
+            # > If bids were never computed for the task, compute bids
             if "bid(s)_reference_state" not in task.local.keys():
                 compute_bids = True
 
@@ -575,6 +584,7 @@ class ICBAANode(MAAFAgent):
                 self.bid(task=task, agent_lst=agent_lst)
 
             # TODO: Cleanup
+            # elif RUN_MODE == SIM: # TODO: Enable once comm sim setup
             # -> Recompute path to task for self if necessary
             elif task.local["bid(s)_reference_state"] != self.agent.state:
                 # -> Agent node
@@ -587,15 +597,8 @@ class ICBAANode(MAAFAgent):
                 path = shortest_path(self.env["graph"], agent_node, task_node)
                 # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
-                # > Get path x and y
-                path_x = [node[0] for node in path]
-                path_y = [node[1] for node in path]
-
                 # > Store path to task local
-                task.shared["path"] = {
-                    "x": path_x,
-                    "y": path_y
-                }
+                task.local["path_for_current_bid"] = path
 
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
@@ -713,12 +716,20 @@ class ICBAANode(MAAFAgent):
                 # -> Update winning bids
                 self.winning_bids_y.loc[selected_task_id, "winning_bids_y"] = self.shared_bids_b.loc[selected_task_id, self.id]
 
+                # -> Update local plan
+                self.agent.plan = Plan(
+                    task_bundle=[selected_task_id],
+                    path=[]
+                )
+
+                # if RUN_MODE == SIM: # TODO: Enable once comm sim setup
+                self.agent.plan.path = self.task_log[selected_task_id].local["path_for_current_bid"]
+
                 self.get_logger().info(f"{self.id} + Assigning task {selected_task_id} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 5)} - Pending task count: {len(self.task_log.ids_pending)})")
 
                 # -> Assign goal
                 self.publish_goal_msg(task_id=selected_task_id, meta_action="assign")
 
-    # ---------------- tools
     # >>>> Prints
     def print_state(
             self,
