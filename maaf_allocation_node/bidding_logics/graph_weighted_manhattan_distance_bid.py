@@ -25,11 +25,17 @@ from maaf_tools.datastructures.agent.AgentState import AgentState
 
 
 def graph_weighted_manhattan_distance_bid(
-        task: Task, 
+        # Tasks
+        task: Task,
+        tasklog: TaskLog,
+
+        # Agents
         agent_lst: list[Agent], 
-        shared_bids_b,
-        environment, 
+        fleet: Fleet,
+
+        environment,
         logger,
+
         *args,
         **kwargs
     ) -> list[dict]:
@@ -37,8 +43,11 @@ def graph_weighted_manhattan_distance_bid(
     Calculate the weighted Manhattan distance between a task and a list of agents.
 
     :param task: The task to calculate the distance to.
+    :param tasklog: The task log to store the path for the current bid.
+
     :param agent_lst: The list of agents to calculate the distance from.
-    :param shared_bids_b: The current bids for the task.
+    :param fleet: The fleet of agents to calculate the distance from.
+
     :param environment: The environment graph to calculate the distance in.
     :param logger: The logger to log messages to.
 
@@ -68,12 +77,39 @@ def graph_weighted_manhattan_distance_bid(
         # -> Task node
         task_node = (task.instructions["x"], task.instructions["y"])
 
-        # -> Find the weigthed Manhattan distance between the agent and the task
-        path = shortest_path(environment["graph"], agent_node, task_node)
-        # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+        # -> If agent on a node in the path for the current bid, reuse and trim the path
+        current_path = tasklog.get_sequence_path(
+            node_sequence=["agent", task.id],
+            requirement=None
+        )
 
-        # > Store path to agent local
-        task.local["path_for_current_bid"] = path
+        if current_path:
+            if agent_node in current_path:
+                path = current_path[current_path.index(agent_node):]
+                compute_path = False
+
+            else:
+                compute_path = True
+        else:
+            compute_path = True
+
+        if compute_path:
+            # -> Find the weigthed Manhattan distance between the agent and the task
+            path = shortest_path(environment["graph"], agent_node, task_node)
+            # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+        # > Store path to agent task log
+        tasklog.add_path(
+            source_node="agent",
+            target_node=task.id,
+            path={
+                "id": f"{agent.id}_{task.id}",
+                "path": path,
+                "requirements": ["ground"]
+            },
+            two_way=False,
+            selection="shortest"
+        )
 
         # -> Calculate the total distance
         total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation

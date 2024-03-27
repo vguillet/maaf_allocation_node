@@ -22,11 +22,17 @@ from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid i
 
 
 def anticipated_action_task_interceding_agent(
+        # Tasks
         task: Task,
+        tasklog: TaskLog,
+
+        # Agents
         agent_lst: list[Agent],
-        shared_bids_b,
+        fleet: Fleet,
+
         environment,
         logger,
+
         *args,
         **kwargs
     ) -> list[dict]:
@@ -34,8 +40,11 @@ def anticipated_action_task_interceding_agent(
     For the provided agent, magnify the bid for the task if the agent has the skillset for the task
 
     :param task: The task to calculate the distance to.
+    :param tasklog: The task log to store the path for the current bid.
+
     :param agent_lst: The list of agents to calculate the distance from.
-    :param shared_bids_b: The current bids for the task.
+    :param fleet: The fleet of agents to calculate the distance from.
+
     :param environment: The environment graph to calculate the distance in.
     :param logger: The logger to log messages to.
 
@@ -48,12 +57,17 @@ def anticipated_action_task_interceding_agent(
     bids.append(
         graph_weighted_manhattan_distance_bid(
             task=task,
+            tasklog=tasklog,
+
             agent_lst=[kwargs["self_agent"]],
-            shared_bids_b=shared_bids_b,
+            fleet=fleet,
+
             environment=environment,
             logger=logger,
-            self_agent=kwargs["self_agent"],  # TODO: Cleanup
-            intercession_targets=kwargs["intercession_targets"]  # TODO: Cleanup
+
+            shared_bids_b=kwargs["shared_bids_b"],                  # TODO: Cleanup
+            self_agent=kwargs["self_agent"],                        # TODO: Cleanup
+            intercession_targets=kwargs["intercession_targets"]     # TODO: Cleanup
         )[0]
     )
 
@@ -98,20 +112,42 @@ def anticipated_action_task_interceding_agent(
         # -> Task node
         task_node = (task.instructions["x"], task.instructions["y"])
 
-        # -> Find the weigthed Manhattan distance between the agent and the task
-        path = shortest_path(environment["graph"], agent_node, task_node)
-        # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+        # -> If agent on a node in the path for the current bid, reuse and trim the path
+        current_path = tasklog.get_sequence_path(
+            node_sequence=["agent", task.id],
+            requirement=None
+        )
 
-        # > Get path x and y
-        path_x = [node[0] for node in path]
-        path_y = [node[1] for node in path]
+        if current_path:
+            if agent_node in current_path:
+                path = current_path[current_path.index(agent_node):]
+                compute_path = False
 
-        # > Store path to agent local
-        task.local["path_for_current_bid"] = path
+            else:
+                compute_path = True
+        else:
+            compute_path = True
+
+        if compute_path:
+            # -> Find the weigthed Manhattan distance between the agent and the task
+            path = shortest_path(environment["graph"], agent_node, task_node)
+            # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+        # > Store path to agent task log
+        tasklog.add_path(
+            source_node="agent",
+            target_node=task.id,
+            path={
+                "id": f"{agent.id}_{task.id}",
+                "path": path,
+                "requirements": ["ground"]
+            },
+            two_way=False,
+            selection="shortest"
+        )
 
         # -> Calculate the total distance
         total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation
-
         # for i in range(len(path) - 1):
         #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 
@@ -126,10 +162,5 @@ def anticipated_action_task_interceding_agent(
             "bid": 1/total_distance,
             "allocation": 0
         })
-
-    # logger.info(f"Task {task.id} has instructions: {task.instructions}")
-
-    # for i, agent in enumerate(agent_lst):
-    #     logger.info(f"Agent {agent.id} has skillset: {agent.skillset}")
 
     return bids

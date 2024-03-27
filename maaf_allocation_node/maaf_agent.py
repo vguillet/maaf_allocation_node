@@ -230,6 +230,7 @@ class MAAFAgent(Node):
         """
         # -> Create task log object
         self.task_log = TaskLog()
+        self.task_log.init_tasklog()
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
@@ -466,12 +467,12 @@ class MAAFAgent(Node):
         """
         self.__env_update_listeners.append(listener)
 
-    def call_on_env_update_listeners(self) -> None:
+    def call_on_env_update_listeners(self, env) -> None:
         """
         Call all environment update listeners
         """
         for listener in self.__env_update_listeners:
-            listener()
+            listener(env)
 
     # ---------------- Pose update
     def add_on_pose_update_listener(self, listener) -> None:
@@ -537,6 +538,7 @@ class MAAFAgent(Node):
         immutable_state = {}
 
         state = self.get_state(
+            env=False,
             state_awareness=False,
             local_allocation_state=True,
             shared_allocation_state=True,
@@ -580,6 +582,7 @@ class MAAFAgent(Node):
 
     # >>>> Base states grouped getter
     def get_state(self,
+                  env: bool = False,
                   state_awareness: bool = False,
                   local_allocation_state: bool = False,
                   shared_allocation_state: bool = False,
@@ -598,7 +601,16 @@ class MAAFAgent(Node):
 
         state = {}
 
-        # !!!!! All states in state awareness must be
+        if env:
+            if not serialised:
+                state["env"] = self.env
+            else:
+                try:
+                    state["env"] = graph_to_json(graph=self.env["graph"], pos=self.env["pos"])
+                except:
+                    state["env"] = None
+
+        # !!!!! All states in state awareness must be maaf_list_dataclasses !!!!!
         if state_awareness:
             if not serialised:
                 state = {**state, **self.state_awareness}
@@ -644,7 +656,7 @@ class MAAFAgent(Node):
         :return: dict
         """
         return {
-            "tasks": self.task_log,
+            "task_log": self.task_log,
             "fleet": self.fleet
         }
     
@@ -690,15 +702,12 @@ class MAAFAgent(Node):
 
     def env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
         if self.env is None:    # TODO: Review env management logic
-            self.get_logger().info(f"         < Received environment update")
-            data = loads(msg.memo)
-            self.env = {
-                "type": data["env_type"],
-                "graph": nx.node_link_graph(data["graph"]),
-                "pos": {eval(k): v for k, v in data["pos"].items()}
-            }
 
-            # -> Display the graph
+            self.get_logger().info(f"         < Received environment update")
+
+            self.env = json_to_graph(graph_json=msg.memo)
+
+            # # -> Display the graph
             # nx.draw(self.env["graph"], pos=self.env["pos"])
             # plt.show()
 
@@ -715,7 +724,7 @@ class MAAFAgent(Node):
                     self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
         # -> Call env update listeners
-        self.call_on_env_update_listeners()
+        self.call_on_env_update_listeners(env=self.env)
 
     def pose_subscriber_callback(self, pose_msg) -> None:
         """
@@ -930,10 +939,15 @@ class MAAFAgent(Node):
         # -> Compute bids
         task_bids = self.bid_evaluation_function(
             task=task,
+            tasklog=self.task_log,
+
             agent_lst=agent_lst,
-            shared_bids_b=self.shared_bids_b,
+            fleet=self.fleet,
+
             environment=self.env,
             logger=self.get_logger(),
+
+            shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
             self_agent=self.agent,                                      # TODO: Cleanup
             intercession_targets=self.scenario.intercession_targets     # TODO: Cleanup
         )
@@ -969,6 +983,7 @@ class MAAFAgent(Node):
         msg.meta_action = "allocation update"
         msg.memo = dumps(
             self.get_state(
+                env=False,
                 state_awareness=True,
                 local_allocation_state=False,
                 shared_allocation_state=True,
@@ -979,12 +994,23 @@ class MAAFAgent(Node):
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
 
-    def publish_goal_msg(self, task_id: Optional[str] = None, meta_action: str = "empty"):
+    def update_plan(self, plan: Optional[Plan] = None):
+        """
+        Update agent plan and publish to controller
+        """
+
+        if plan is not None:
+            self.fleet.set_agent_plan(agent_id=self.id, plan=plan)
+
+        self.publish_goal_msg(self, meta_action="update")
+
+    def publish_goal_msg(self,
+                         meta_action: str = "empty"     # empty/update
+                         ):
         """
         Publish goal to the robot's goal topic for execution as TeamCommStamped message
 
-        :param task_id: task id
-        :param meta_action: action to take, can be "assign" or "cancel" or "empty"
+        :param meta_action: action to take, can be "empty" or "update"
         """
 
         # -> Create message
@@ -998,24 +1024,15 @@ class MAAFAgent(Node):
         msg.source = self.id
         msg.meta_action = meta_action
 
-        if task_id is not None:
-            msg.target = task_id
-
-            # TODO: Cleanup
-            # task_dict = deepcopy(self.task_log[task_id].asdict())
-            # task_dict["local"]["path"] = self.task_log[task_id].local["path"]
-            # msg.memo = dumps(self.task_log[task_id].asdict())    # TODO: Cleanup
-
+        if meta_action == "update":
+            msg.target = "all"      # TODO: Review
             memo = {
                 "agent": self.agent.asdict(),
-                "task": self.task_log[task_id].asdict()
-                # "task": task_dict
             }
 
         else:
             # TODO: Cleanup (used to push msg to all channel to init all trackers across nodes
             msg.target = "all"
-
             memo = {"agent": self.agent.asdict()}
 
         # > Dump memo
@@ -1090,6 +1107,7 @@ class MAAFAgent(Node):
         deserialised_state = loads(state)
 
         states = self.get_state(
+            env=False,
             state_awareness=False,
             local_allocation_state=True,
             shared_allocation_state=True,
