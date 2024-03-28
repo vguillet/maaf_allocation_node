@@ -329,14 +329,15 @@ class ICBAANode(MAAFAgent):
 
             # -> Cancel goal if task is assigned to self
             if self.task_list_x.loc[task.id, "task_list_x"] == 1:
-                # # -> Remove task from plan bundle
-                # self.agent.plan.task_bundle.remove(task)
-                #
-                # # -> Flag plan as recompute
-                # self.agent.plan.recompute = True
+                # -> Remove task from plan
+                self.agent.remove_task_from_plan(
+                    task_log=self.task_log,
+                    task=task,
+                    # logger=self.get_logger()
+                )
 
-                # -> Cancel goal
-                self.update_plan(plan=Plan())
+                # > Publish goal msg
+                self.publish_goal_msg(meta_action="update")
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -483,10 +484,15 @@ class ICBAANode(MAAFAgent):
             # -> If the winning agent is not the agent, remove the task from the task list
             self.task_list_x.loc[task_id] = 0
 
-            self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list")
+            # -> Remove task from plan
+            self.agent.remove_task_from_plan(
+                task_log=self.task_log,
+                task=task_id,
+                logger=self.get_logger()
+            )
 
-            # -> Cancel goal
-            self.update_plan(plan=Plan())
+            # > Publish goal msg
+            self.publish_goal_msg(meta_action="update")
 
     # ---------------- Processes
     # >>>> CBAA
@@ -536,7 +542,7 @@ class ICBAANode(MAAFAgent):
                 # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
                 # > Store path to agent task log
-                self.tasklog.add_path(
+                self.task_log.add_path(
                     source_node="agent",
                     target_node=task.id,
                     path={
@@ -548,9 +554,13 @@ class ICBAANode(MAAFAgent):
                     selection="latest"
                 )
 
-                # -> Send new path to controller if task is assigned task
-                if self.task_list_x.loc[task.id, "task_list_x"] == 1:
-                    self.update_plan()
+            # -> Update plan (retrieve new path)
+            self.agent.update_plan(
+                tasklog=self.task_log
+            )
+
+            # # > Publish goal msg
+            # self.publish_goal_msg(meta_action="update")
 
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
@@ -613,8 +623,15 @@ class ICBAANode(MAAFAgent):
                 # -> Reset winning bids
                 self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
 
-                # -> Cancel goal
-                self.update_plan(plan=Plan())
+                # -> Remove task from plan
+                self.agent.remove_task_from_plan(
+                    task_log=self.task_log,
+                    task=task_id,
+                    logger=self.get_logger()
+                )
+
+                # > Publish goal msg
+                self.publish_goal_msg(meta_action="update")
 
         # -> If no task is assigned to self, select a task
         if self.task_list_x["task_list_x"].sum() == 0:
@@ -663,14 +680,11 @@ class ICBAANode(MAAFAgent):
 
                 # if RUN_MODE == SIM: # TODO: Enable once comm sim setup
 
-                self.get_logger().info(f"{self.id} + Assigning task {selected_task_id} to self (bid: {round(self.shared_bids_b.loc[valid_tasks, self.id].max(), 5)} - Pending task count: {len(self.task_log.ids_pending)})")
-
                 # -> Assign goal
-                self.update_plan(
-                    plan=Plan(
-                        task_bundle=[self.fleet[selected_task_id]],
-                    )
-                )
+                self.agent.add_task_to_plan(task_log=self.task_log, task=selected_task_id)
+
+                # > Publish goal msg
+                self.publish_goal_msg(meta_action="update")
 
     # >>>> Prints
     def print_state(
@@ -848,12 +862,17 @@ class ICBAANode(MAAFAgent):
             # -> Reset task value to zero to remove allocation
             if reset:
                 if tasks_value_x_ij == 1:
-                    self.get_logger().info(f"{self.id} - Dropping task {task_id} from task list - Pending task count: {len(self.task_log.ids_pending)}")
-
                     tasks_value_x_ij = 0
 
                     # -> Cancel goal
-                    self.update_plan(plan=Plan())
+                    self.agent.remove_task_from_plan(
+                        task_log=self.task_log,
+                        task=task_id,
+                        logger=self.get_logger()
+                    )
+
+                    # > Publish goal msg
+                    self.publish_goal_msg(meta_action="update")
 
         # -> If updated priority is higher
         elif priority_source_ij < priority_updated_ij:

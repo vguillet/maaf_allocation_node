@@ -108,7 +108,7 @@ def graph_weighted_manhattan_distance_bid(
                 "requirements": ["ground"]
             },
             two_way=False,
-            selection="shortest"
+            selection="latest"
         )
 
         # -> Calculate the total distance

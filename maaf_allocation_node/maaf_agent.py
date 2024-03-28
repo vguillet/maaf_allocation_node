@@ -216,10 +216,7 @@ class MAAFAgent(Node):
                         v=0,
                         w=0
                     ),
-                    plan=Plan(
-                        task_bundle=[],
-                        path=[]
-                    )
+                    plan=Plan()
                 )
             )
 
@@ -994,16 +991,6 @@ class MAAFAgent(Node):
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
 
-    def update_plan(self, plan: Optional[Plan] = None):
-        """
-        Update agent plan and publish to controller
-        """
-
-        if plan is not None:
-            self.fleet.set_agent_plan(agent_id=self.id, plan=plan)
-
-        self.publish_goal_msg(self, meta_action="update")
-
     def publish_goal_msg(self,
                          meta_action: str = "empty"     # empty/update
                          ):
@@ -1025,9 +1012,21 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         if meta_action == "update":
-            msg.target = "all"      # TODO: Review
+            # update_success = self.agent.update_plan(tasklog=self.task_log)
+            #
+            # if not update_success:
+            #     self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
+
+            # -> Gather tasks in plan
+            tasks = {}
+
+            for task_id in self.agent.plan.task_bundle:
+                tasks[task_id] = self.task_log[task_id].asdict()
+
+            msg.target = self.id
             memo = {
                 "agent": self.agent.asdict(),
+                "tasks": tasks
             }
 
         else:
