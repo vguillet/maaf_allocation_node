@@ -85,7 +85,7 @@ class ICBAANode(MAAFAgent):
         """
         self.task_list_x = pd.DataFrame(
             np.zeros((self.Task_count_N_t, 1)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=["task_list_x"]
         )
 
@@ -133,7 +133,7 @@ class ICBAANode(MAAFAgent):
         # -> Create new task
         if task_msg.meta_action == "pending":
             # -> Pass if task is already in the task log
-            if task.id in self.task_log.ids:
+            if task.id in self.tasklog.ids:
                 return
 
         #     # TODO: Remove this line once task creation handles stamp creation
@@ -160,17 +160,20 @@ class ICBAANode(MAAFAgent):
         # -> Update previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
-        # -> Publish allocation state to the fleet to share the new task
+        # > Publish goal msg
+        self.publish_goal_msg(meta_action="update")
+
+        # -> If state has changed, update local states (only publish when necessary)
         self.publish_allocation_state_msg()
 
         if task_msg.meta_action == "pending":
-            self.get_logger().info(f"{self.id} * Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} * Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.tasklog.ids_pending)}")
 
         elif task_msg.meta_action == "completed":
-            self.get_logger().info(f"{self.id} v Task {task.id} completed - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} v Task {task.id} completed - Pending task count: {len(self.tasklog.ids_pending)}")
 
         elif task_msg.meta_action == "cancelled":
-            self.get_logger().info(f"{self.id} x Task {task.id} cancelled - Pending task count: {len(self.task_log.ids_pending)}")
+            self.get_logger().info(f"{self.id} x Task {task.id} cancelled - Pending task count: {len(self.tasklog.ids_pending)}")
 
     def team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -188,17 +191,16 @@ class ICBAANode(MAAFAgent):
 
         # # -> If the message is not for the agent...
         if msg_target != self.id and msg_target != "all":
-            return
-            # # -> Check if the agent should rebroadcast the message
+            # -> Check if the agent should rebroadcast the message
             # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
-            # return
+            return
 
         # -> Deserialise allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
-        # > Convert received serialised task_log to task_log
-        received_task_log = TaskLog.from_dict(received_allocation_state["task_log"])
+        # > Convert received serialised tasklog to tasklog
+        received_task_log = TaskLog.from_dict(received_allocation_state["tasklog"])
 
         # > Convert received serialised fleet to fleet
         received_fleet = Fleet.from_dict(received_allocation_state["fleet"])
@@ -218,7 +220,7 @@ class ICBAANode(MAAFAgent):
 
         # -> Update the task in the task list x the agent is assigned to
         for task in received_task_log:
-            if task.id not in self.task_log.ids_pending:
+            if task.id not in self.tasklog.ids_pending:
                 continue
 
             task_id = task.id
@@ -231,6 +233,9 @@ class ICBAANode(MAAFAgent):
 
         # -> Select new task
         self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change) # TODO: Cleanup
+
+        # > Publish goal msg
+        self.publish_goal_msg(meta_action="update")
 
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
@@ -275,7 +280,7 @@ class ICBAANode(MAAFAgent):
             state.pop("winning_bids_y")
 
             for matrix in state.values():
-                matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+                matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
 
         def remove_agent(agent: Agent) -> None:
             """
@@ -283,7 +288,7 @@ class ICBAANode(MAAFAgent):
             """
 
             # TODO: Figure out how to deal with removing bids from the winning bid matrix (full reset vs bid owner tracking). For now, reset winning bids matrix (full reset)
-            self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.task_log.ids_pending)
+            self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
 
             # -> Remove agent from all allocation lists and matrices
             state = self.get_state(
@@ -331,13 +336,10 @@ class ICBAANode(MAAFAgent):
             if self.task_list_x.loc[task.id, "task_list_x"] == 1:
                 # -> Remove task from plan
                 self.agent.remove_task_from_plan(
-                    task_log=self.task_log,
+                    tasklog=self.tasklog,
                     task=task,
                     # logger=self.get_logger()
                 )
-
-                # > Publish goal msg
-                self.publish_goal_msg(meta_action="update")
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -354,18 +356,23 @@ class ICBAANode(MAAFAgent):
                     pass
 
         # ---- Merge received fleet into local one
-        fleet_state_change = self.fleet.merge_fleets(
+        fleet_state_change = self.fleet.merge(
             fleet=fleet,
             add_agent_callback=add_agent,
-            remove_agent_callback=remove_agent
+            remove_agent_callback=remove_agent,
+            fleet_state_change_callback=None,
+            prioritise_local=False,
+            logger=self.get_logger()
         )
 
         # ---- Merge received task list into local one
-        task_state_change = self.task_log.merge_tasklogs(
+        task_state_change = self.tasklog.merge(
             tasklog=tasklog,
             add_task_callback=add_task,
             terminate_task_callback=terminate_task,
-            task_state_change_callback=self.compute_bids
+            tasklog_state_change_callback=self.compute_bids,
+            prioritise_local=False,
+            logger=self.get_logger()
         )
 
         return task_state_change, fleet_state_change
@@ -392,7 +399,7 @@ class ICBAANode(MAAFAgent):
         # -> For each task ...
         for task_id in received_tasks_ids:
             # -> If the task has been terminated, skip
-            if task_id not in self.task_log.ids_pending:
+            if task_id not in self.tasklog.ids_pending:
                 continue
 
             # -> for each agent ...
@@ -486,13 +493,10 @@ class ICBAANode(MAAFAgent):
 
             # -> Remove task from plan
             self.agent.remove_task_from_plan(
-                task_log=self.task_log,
+                tasklog=self.tasklog,
                 task=task_id,
                 logger=self.get_logger()
             )
-
-            # > Publish goal msg
-            self.publish_goal_msg(meta_action="update")
 
     # ---------------- Processes
     # >>>> CBAA
@@ -503,7 +507,7 @@ class ICBAANode(MAAFAgent):
         computed in, recompute the bids.
         """
         # ... for each task
-        for task in self.task_log.tasks_pending:
+        for task in self.tasklog.tasks_pending:
             # -> Check bid reference state
             compute_bids = False
 
@@ -542,7 +546,7 @@ class ICBAANode(MAAFAgent):
                 # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
                 # > Store path to agent task log
-                self.task_log.add_path(
+                self.tasklog.add_path(
                     source_node="agent",
                     target_node=task.id,
                     path={
@@ -554,13 +558,10 @@ class ICBAANode(MAAFAgent):
                     selection="latest"
                 )
 
-            # -> Update plan (retrieve new path)
-            self.agent.update_plan(
-                tasklog=self.task_log
-            )
-
-            # # > Publish goal msg
-            # self.publish_goal_msg(meta_action="update")
+        # -> Update plan (retrieve new path)
+        self.agent.update_plan(
+            tasklog=self.tasklog
+        )
 
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
@@ -573,9 +574,8 @@ class ICBAANode(MAAFAgent):
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
-
             # > For each task ...
-            for task_id in self.task_log.ids_pending:
+            for task_id in self.tasklog.ids_pending:
                 # > For each agent ...
                 for agent_id in self.fleet.ids_active:
                     # -> Priority merge local bids c into current bids b
@@ -625,25 +625,22 @@ class ICBAANode(MAAFAgent):
 
                 # -> Remove task from plan
                 self.agent.remove_task_from_plan(
-                    task_log=self.task_log,
+                    tasklog=self.tasklog,
                     task=task_id,
                     logger=self.get_logger()
                 )
-
-                # > Publish goal msg
-                self.publish_goal_msg(meta_action="update")
 
         # -> If no task is assigned to self, select a task
         if self.task_list_x["task_list_x"].sum() == 0:
             # -> Create list of valid tasks (pandas series of task ids initialised as 0)
             valid_tasks_list_h = pd.DataFrame(
                 np.zeros(self.Task_count_N_t),
-                index=self.task_log.ids_pending,
+                index=self.tasklog.ids_pending,
                 columns=["valid_tasks_list_h"]
             )
 
             # > For each task ...
-            for task_id in self.task_log.ids_pending:
+            for task_id in self.tasklog.ids_pending:
                 # -> Create set of agents with imposed allocations
                 agents_with_imposed_allocations = list(set(self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index))
 
@@ -681,10 +678,11 @@ class ICBAANode(MAAFAgent):
                 # if RUN_MODE == SIM: # TODO: Enable once comm sim setup
 
                 # -> Assign goal
-                self.agent.add_task_to_plan(task_log=self.task_log, task=selected_task_id)
-
-                # > Publish goal msg
-                self.publish_goal_msg(meta_action="update")
+                self.agent.add_task_to_plan(
+                    tasklog=self.tasklog,
+                    task=selected_task_id,
+                    logger=self.get_logger()
+                )
 
     # >>>> Prints
     def print_state(
@@ -706,7 +704,7 @@ class ICBAANode(MAAFAgent):
         print(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Agent {self.id} state:")
         if situation_awareness:
             print("----- Situation awareness")
-            pprint(self.task_log.asdict())
+            pprint(self.tasklog.asdict())
             pprint(self.fleet.asdict())
 
         if local_allocation_state:
@@ -866,13 +864,10 @@ class ICBAANode(MAAFAgent):
 
                     # -> Cancel goal
                     self.agent.remove_task_from_plan(
-                        task_log=self.task_log,
+                        tasklog=self.tasklog,
                         task=task_id,
                         logger=self.get_logger()
                     )
-
-                    # > Publish goal msg
-                    self.publish_goal_msg(meta_action="update")
 
         # -> If updated priority is higher
         elif priority_source_ij < priority_updated_ij:

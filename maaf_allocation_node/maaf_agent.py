@@ -157,7 +157,7 @@ class MAAFAgent(Node):
 
         # -> Connect listeners
         # self.fleet.add_on_edit_list_listener()
-        # self.task_log.add_on_edit_list_listener()
+        # self.tasklog.add_on_edit_list_listener()
 
         # ---- Node connections
         self.__setup_node_pubs_subs()
@@ -226,15 +226,15 @@ class MAAFAgent(Node):
         Tasks are created using the self.create_task method
         """
         # -> Create task log object
-        self.task_log = TaskLog()
-        self.task_log.init_tasklog()
+        self.tasklog = TaskLog()
+        self.tasklog.init_tasklog()
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
         # task_log_data = []
         #
         # # > Add initial task data to the task log object
-        # self.task_log.from_dict(maaflist_dict=task_log_data)
+        # self.tasklog.from_dict(maaflist_dict=task_log_data)
 
     def __setup_node_pubs_subs(self) -> None:
         """
@@ -347,7 +347,7 @@ class MAAFAgent(Node):
         """
         self.local_bids_c = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active,
         )
 
@@ -364,7 +364,7 @@ class MAAFAgent(Node):
         """
         self.local_allocations_d = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active,
         )
 
@@ -378,7 +378,7 @@ class MAAFAgent(Node):
 
         self.winning_bids_y = pd.DataFrame(
             np.zeros((self.Task_count_N_t, 1)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=["winning_bids_y"]
         )
 
@@ -392,7 +392,7 @@ class MAAFAgent(Node):
         """
         self.shared_bids_b = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active,
         )
 
@@ -406,7 +406,7 @@ class MAAFAgent(Node):
         """
         self.shared_bids_priority_beta = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active
         )
 
@@ -420,7 +420,7 @@ class MAAFAgent(Node):
         """
         self.shared_allocations_a = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active
         )
 
@@ -432,7 +432,7 @@ class MAAFAgent(Node):
         """
         self.shared_allocations_priority_alpha = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.task_log.ids_pending,
+            index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active
         )
 
@@ -512,7 +512,7 @@ class MAAFAgent(Node):
         """
         Pending tasks count
         """
-        return len(self.task_log.tasks_pending)
+        return len(self.tasklog.tasks_pending)
 
     @property
     def Agent_count_N_u(self) -> int:
@@ -653,7 +653,7 @@ class MAAFAgent(Node):
         :return: dict
         """
         return {
-            "task_log": self.task_log,
+            "tasklog": self.tasklog,
             "fleet": self.fleet
         }
     
@@ -709,7 +709,7 @@ class MAAFAgent(Node):
             # plt.show()
 
             # -> Recompute local bids for all tasks
-            for task in self.task_log.tasks_pending:
+            for task in self.tasklog.tasks_pending:
                 task_bids = self.bid(task, [self.agent])
 
                 # -> Store bids to local bids matrix
@@ -768,7 +768,7 @@ class MAAFAgent(Node):
         self.get_logger().info(f"{self.id} < Received bid: \n    Task id: {bid_msg.task_id}\n    Agent id: {bid_msg.target_agent_id}\n    Value: {bid_msg.value}\n    Priority: {bid_msg.priority}")
 
         # -> Check if bid is for a task the agent is aware of
-        if bid_msg.task_id not in self.task_log.ids:
+        if bid_msg.task_id not in self.tasklog.ids:
             self.get_logger().info(f"!!! WARNING: Received bid for task {bid_msg.task_id} not in task log")
             return
         # -> Check if bid is for an agent the agent is aware of
@@ -818,7 +818,7 @@ class MAAFAgent(Node):
         self.get_logger().info(f"{self.id} < Received allocation: \n    Task id: {allocation_msg.task_id}\n    Agent id: {allocation_msg.target_agent_id}\n    Action: {allocation_msg.action}\n    Priority: {allocation_msg.priority}")
 
         # -> Check if bid is for a task the agent is aware of
-        if allocation_msg.task_id not in self.task_log.ids:
+        if allocation_msg.task_id not in self.tasklog.ids:
             self.get_logger().info(f"!!! WARNING: Received allocation for task {allocation_msg.task_id} not in task log")
             return
         # -> Check if bid is for an agent the agent is aware of
@@ -936,7 +936,7 @@ class MAAFAgent(Node):
         # -> Compute bids
         task_bids = self.bid_evaluation_function(
             task=task,
-            tasklog=self.task_log,
+            tasklog=self.tasklog,
 
             agent_lst=agent_lst,
             fleet=self.fleet,
@@ -1012,8 +1012,8 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         if meta_action == "update":
-            # update_success = self.agent.update_plan(tasklog=self.task_log)
-            #
+            update_success = self.agent.update_plan(tasklog=self.tasklog)
+
             # if not update_success:
             #     self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
 
@@ -1021,7 +1021,7 @@ class MAAFAgent(Node):
             tasks = {}
 
             for task_id in self.agent.plan.task_bundle:
-                tasks[task_id] = self.task_log[task_id].asdict()
+                tasks[task_id] = self.tasklog[task_id].asdict()
 
             msg.target = self.id
             memo = {
