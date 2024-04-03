@@ -149,7 +149,7 @@ class MAAFAgent(Node):
         self.env = None
 
         # ---- Fleet and task log
-        self.__setup_fleet_and_task_log()
+        self.__setup_fleet_and_tasklog()
 
         # ---- Listeners
         self.__env_update_listeners = []
@@ -176,7 +176,7 @@ class MAAFAgent(Node):
                                )
 
     # ============================================================== INIT
-    def __setup_fleet_and_task_log(self) -> None:
+    def __setup_fleet_and_tasklog(self) -> None:
         # ---- Fleet data
         """
         Fleet dict of size N_a
@@ -231,10 +231,10 @@ class MAAFAgent(Node):
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
-        # task_log_data = []
+        # tasklog_data = []
         #
         # # > Add initial task data to the task log object
-        # self.tasklog.from_dict(maaflist_dict=task_log_data)
+        # self.tasklog.from_dict(maaflist_dict=tasklog_data)
 
     def __setup_node_pubs_subs(self) -> None:
         """
@@ -448,7 +448,7 @@ class MAAFAgent(Node):
         Reset allocation states for the agents
         """
         # -> Reset fleet and task log
-        self.__setup_fleet_and_task_log()
+        self.__setup_fleet_and_tasklog()
 
         # -> Reset allocation states
         self.__setup_allocation_base_states()
@@ -744,12 +744,27 @@ class MAAFAgent(Node):
         # > Timestamp
         self.agent.state.timestamp = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
 
-        # -> Call pose update listeners
-        self.call_on_pose_update_listeners()
-
         # self.publish_allocation_state_msg()     # TODO: Cleanup
 
         # self.get_logger().info(f"         < Received state update ({self.agent.state.x},{self.agent.state.y},{self.agent.state.z})")
+
+        # self.compute_bids()
+
+        # -> Recompute paths to tasks
+        # for task in self.tasklog.tasks_pending:
+        #     # -> Update path to task
+        #     self.update_path(
+        #         source="agent",
+        #         source_pos=(self.agent.state.x, self.agent.state.y),
+        #         target=task.id,
+        #         target_pos=(task.instructions["x"], task.instructions["y"])
+        #     )
+
+        # -> Publish goal (necessary to publish updated paths if computed before
+        self.publish_goal_msg(meta_action="update", traceback="Pose update")
+
+        # -> Call pose update listeners
+        self.call_on_pose_update_listeners()
 
     def fleet_msg_update_timer_callback(self) -> None:
         """
@@ -992,7 +1007,8 @@ class MAAFAgent(Node):
         self.fleet_msgs_pub.publish(msg)
 
     def publish_goal_msg(self,
-                         meta_action: str = "empty"     # empty/update
+                         meta_action: str = "empty",     # empty/update,
+                         *args, **kwargs
                          ):
         """
         Publish goal to the robot's goal topic for execution as TeamCommStamped message
@@ -1012,10 +1028,20 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         if meta_action == "update":
+            # -> Update path to start task
+            if self.agent.plan.task_bundle:
+                start_task = self.tasklog[self.agent.plan.task_bundle[0]]
+                self.update_path(
+                    source="agent",
+                    source_pos=(self.agent.state.x, self.agent.state.y),
+                    target=start_task.id,
+                    target_pos=(start_task.instructions["x"], start_task.instructions["y"])
+                )
+
             update_success = self.agent.update_plan(tasklog=self.tasklog)
 
-            # if not update_success:
-            #     self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
+            if not update_success:
+                self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
 
             # -> Gather tasks in plan
             tasks = {}
@@ -1026,7 +1052,9 @@ class MAAFAgent(Node):
             msg.target = self.id
             memo = {
                 "agent": self.agent.asdict(),
-                "tasks": tasks
+                "tasks": tasks,
+                "args": args,
+                "kwargs": kwargs
             }
 
         else:
@@ -1122,6 +1150,58 @@ class MAAFAgent(Node):
                 deserialised_state[key] = pd.DataFrame(value) if isinstance(value, dict) else pd.Series(value)
 
         return deserialised_state
+
+    def update_path(self,
+                    source: str,
+                    source_pos: tuple,
+                    target: str,
+                    target_pos: tuple,
+                    ) -> None:
+        """
+        Update path to a task for an agent
+
+        :param source: Source node
+        :param source_pos: Source node position
+        :param target: Target node
+        :param target_pos: Target node position
+        """
+
+        current_path = self.tasklog.get_path(
+            source=source,
+            target=target,
+            requirement=None,
+            selection="shortest"
+        )
+
+        if current_path:
+            current_path = current_path["path"]
+
+            if source_pos in current_path:
+                path = current_path[current_path.index(source_pos):]
+                compute_path = False
+
+            else:
+                compute_path = True
+        else:
+            compute_path = True
+
+        if compute_path:
+            # -> Find the Manhattan distance between the agent and the task
+            path = nx.shortest_path(self.env["graph"], source_pos, target_pos)
+            # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
+
+        # > Store path to agent task log
+        self.tasklog.add_path(
+            source_node=source,
+            target_node=target,
+            path={
+                "id": f"{self.id}:{source}_{target}",
+                "path": path,
+                "requirements": ["ground"]
+            },
+            two_way=False,
+            selection="latest"
+        )
 
     @abstractmethod
     def priority_merge(

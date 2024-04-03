@@ -20,6 +20,8 @@ from maaf_tools.datastructures.agent.Agent import Agent
 from maaf_tools.datastructures.agent.Fleet import Fleet
 from maaf_tools.datastructures.agent.AgentState import AgentState
 
+from maaf_tools.tools import *
+
 
 ##################################################################################################################
 
@@ -74,16 +76,17 @@ def graph_weighted_manhattan_distance_bid(
         # -> Agent node
         agent_node = (agent.state.x, agent.state.y)
 
-        # -> Task node
-        task_node = (task.instructions["x"], task.instructions["y"])
-
         # -> If agent on a node in the path for the current bid, reuse and trim the path
-        current_path = tasklog.get_sequence_path(
-            node_sequence=["agent", task.id],
-            requirement=None
+        current_path = tasklog.get_path(
+            source="agent",
+            target=task.id,
+            requirement=None,
+            selection="shortest"
         )
 
         if current_path:
+            current_path = current_path["path"]
+
             if agent_node in current_path:
                 path = current_path[current_path.index(agent_node):]
                 compute_path = False
@@ -94,6 +97,9 @@ def graph_weighted_manhattan_distance_bid(
             compute_path = True
 
         if compute_path:
+            # -> Task node
+            task_node = (task.instructions["x"], task.instructions["y"])
+
             # -> Find the weigthed Manhattan distance between the agent and the task
             path = shortest_path(environment["graph"], agent_node, task_node)
             # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
@@ -112,7 +118,12 @@ def graph_weighted_manhattan_distance_bid(
         )
 
         # -> Calculate the total distance
-        total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation
+        total_distance = consistent_random(
+            string=agent.id,
+            min_value=0.0000000000001,
+            max_value=0.000000001
+        )    # Start with random tiny number to avoid division by zero and ties in allocation
+
         # for i in range(len(path) - 1):
         #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 

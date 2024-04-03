@@ -18,6 +18,8 @@ from maaf_tools.datastructures.agent.AgentState import AgentState
 
 from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
+from maaf_tools.tools import *
+
 ##################################################################################################################
 
 
@@ -113,12 +115,16 @@ def anticipated_action_task_interceding_agent(
         task_node = (task.instructions["x"], task.instructions["y"])
 
         # -> If agent on a node in the path for the current bid, reuse and trim the path
-        current_path = tasklog.get_sequence_path(
-            node_sequence=["agent", task.id],
-            requirement=None
+        current_path = tasklog.get_path(
+            source="agent",
+            target=task.id,
+            requirement=None,
+            selection="shortest"
         )
 
         if current_path:
+            current_path = current_path["path"]
+
             if agent_node in current_path:
                 path = current_path[current_path.index(agent_node):]
                 compute_path = False
@@ -148,6 +154,13 @@ def anticipated_action_task_interceding_agent(
 
         # -> Calculate the total distance
         total_distance = random.uniform(0.0000000000001, 0.000000001)    # Start with random tiny number to avoid division by zero and ties in allocation
+
+        total_distance = consistent_random(
+            string=agent.id,
+            min_value=0.0000000000001,
+            max_value=0.000000001
+        )    # Start with random tiny number to avoid division by zero and ties in allocation
+
         # for i in range(len(path) - 1):
         #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
 
