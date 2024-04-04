@@ -60,9 +60,9 @@ from maaf_tools.datastructures.agent.Plan import Plan
 
 from maaf_tools.tools import *
 
-from .bidding_logics.random_bid import random_bid
-from .bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
-from .bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+# from .bidding_logics.random_bid import random_bid
+from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 ##################################################################################################################
 
@@ -227,7 +227,7 @@ class MAAFAgent(Node):
         """
         # -> Create task log object
         self.tasklog = TaskLog()
-        self.tasklog.init_tasklog()
+        self.tasklog.init_tasklog(agent_id=self.agent.id)
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
@@ -248,7 +248,7 @@ class MAAFAgent(Node):
         self.simulator_signals_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=topic_simulator_signals,
-            callback=self.simulator_signals_callback,
+            callback=self.__simulator_signals_callback,
             qos_profile=qos_simulator_signals
         )
 
@@ -257,7 +257,7 @@ class MAAFAgent(Node):
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
                 topic=topic_fleet_msgs,
-                callback=self.team_msg_subscriber_callback,
+                callback=self._team_msg_subscriber_callback,
                 qos_profile=qos_fleet_msgs
             )
 
@@ -266,7 +266,7 @@ class MAAFAgent(Node):
             self.fleet_msgs_sub = self.create_subscription(
                 msg_type=TeamCommStamped,
                 topic=topic_fleet_msgs_filtered,
-                callback=self.team_msg_subscriber_callback,
+                callback=self._team_msg_subscriber_callback,
                 qos_profile=qos_fleet_msgs
             )
 
@@ -275,7 +275,7 @@ class MAAFAgent(Node):
         self.env_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=topic_environment,
-            callback=self.env_callback,
+            callback=self.__env_callback,
             qos_profile=qos_env
         )
 
@@ -283,7 +283,7 @@ class MAAFAgent(Node):
         self.task_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=topic_tasks,
-            callback=self.task_msg_subscriber_callback,
+            callback=self._task_msg_subscriber_callback,
             qos_profile=qos_tasks
         )
 
@@ -291,7 +291,7 @@ class MAAFAgent(Node):
         self.pose_sub = self.create_subscription(
             msg_type=PoseStamped,
             topic=f"/{self.id}{topic_pose}",
-            callback=self.pose_subscriber_callback,
+            callback=self.__pose_subscriber_callback,
             qos_profile=qos_pose
         )
 
@@ -299,7 +299,7 @@ class MAAFAgent(Node):
         self.bid_sub = self.create_subscription(
             msg_type=Bid,
             topic=topic_bids,
-            callback=self.bid_subscriber_callback,
+            callback=self.__bid_subscriber_callback,
             qos_profile=qos_intercession
         )
 
@@ -307,7 +307,7 @@ class MAAFAgent(Node):
         self.allocation_sub = self.create_subscription(
             msg_type=Allocation,
             topic=topic_allocations,
-            callback=self.allocation_subscriber_callback,
+            callback=self.__allocation_subscriber_callback,
             qos_profile=qos_intercession
         )
 
@@ -437,7 +437,7 @@ class MAAFAgent(Node):
         )
 
     @abstractmethod
-    def __setup_allocation_additional_states(self) -> None:
+    def _setup_allocation_additional_states(self) -> None:
         """
         Setup additional method-dependent allocation states for the agents
         """
@@ -452,7 +452,7 @@ class MAAFAgent(Node):
 
         # -> Reset allocation states
         self.__setup_allocation_base_states()
-        self.__setup_allocation_additional_states()
+        self._setup_allocation_additional_states()
 
     # ============================================================== Listeners
     # ---------------- Env update
@@ -677,7 +677,7 @@ class MAAFAgent(Node):
     @abstractmethod
     def local_allocation_state(self) -> dict:
         """
-        Local allocation state at current time step not (serialised)
+        Local allocation state at current time step (not serialised)
         !!!! All entries must be dataframes !!!!
 
         :return: dict
@@ -687,7 +687,7 @@ class MAAFAgent(Node):
     # ============================================================== METHODS
     # ---------------- Callbacks
     # >>>> Base
-    def simulator_signals_callback(self, msg: TeamCommStamped):
+    def __simulator_signals_callback(self, msg: TeamCommStamped):
         if msg.meta_action == "order 66":
             self.get_logger().info("Received order 66: Terminating simulation")
 
@@ -697,12 +697,14 @@ class MAAFAgent(Node):
             # -> Terminate script
             sys.exit()
 
-    def env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
+    def __env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
         if self.env is None:    # TODO: Review env management logic
 
-            self.get_logger().info(f"         < Received environment update")
-
             self.env = json_to_graph(graph_json=msg.memo)
+
+            self.env["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.env["graph"]))
+
+            self.get_logger().info(f"         < Received environment update")
 
             # # -> Display the graph
             # nx.draw(self.env["graph"], pos=self.env["pos"])
@@ -723,7 +725,7 @@ class MAAFAgent(Node):
         # -> Call env update listeners
         self.call_on_env_update_listeners(env=self.env)
 
-    def pose_subscriber_callback(self, pose_msg) -> None:
+    def __pose_subscriber_callback(self, pose_msg) -> None:
         """
         Callback for the pose subscriber
 
@@ -750,30 +752,20 @@ class MAAFAgent(Node):
 
         # self.compute_bids()
 
-        # -> Recompute paths to tasks
-        # for task in self.tasklog.tasks_pending:
-        #     # -> Update path to task
-        #     self.update_path(
-        #         source="agent",
-        #         source_pos=(self.agent.state.x, self.agent.state.y),
-        #         target=task.id,
-        #         target_pos=(task.instructions["x"], task.instructions["y"])
-        #     )
-
         # -> Publish goal (necessary to publish updated paths if computed before
         self.publish_goal_msg(meta_action="update", traceback="Pose update")
 
         # -> Call pose update listeners
         self.call_on_pose_update_listeners()
 
-    def fleet_msg_update_timer_callback(self) -> None:
+    def __fleet_msg_update_timer_callback(self) -> None:
         """
         Callback for the fleet message update timer
         """
         # -> Publish allocation state to the fleet
         self.publish_allocation_state_msg()
 
-    def bid_subscriber_callback(self, bid_msg: Bid) -> None:
+    def __bid_subscriber_callback(self, bid_msg: Bid) -> None:
         """
         Callback for the bid subscriber
 
@@ -823,7 +815,7 @@ class MAAFAgent(Node):
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
 
-    def allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
+    def __allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
         """
         Callback for the allocation subscriber
 
@@ -879,7 +871,7 @@ class MAAFAgent(Node):
             self.check_publish_state_change()
 
     @abstractmethod
-    def task_msg_subscriber_callback(self, task_msg):
+    def _task_msg_subscriber_callback(self, task_msg):
         """
         Callback for task messages, create new task. add to local tasks and update local states, and select new task
 
@@ -888,7 +880,7 @@ class MAAFAgent(Node):
         pass
 
     @abstractmethod
-    def team_msg_subscriber_callback(self, team_msg):
+    def _team_msg_subscriber_callback(self, team_msg):
         """
         Callback for team messages: consensus phase of the CBAA algorithm
 
@@ -898,7 +890,7 @@ class MAAFAgent(Node):
 
     # >>>> Node specific
     @abstractmethod
-    def __update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
+    def update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
         """
         Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
         local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
@@ -910,7 +902,7 @@ class MAAFAgent(Node):
         pass
 
     @abstractmethod
-    def __update_shared_states(
+    def update_shared_states(
             self,
             received_shared_bids_b,
             received_shared_bids_priority_beta,
@@ -981,6 +973,19 @@ class MAAFAgent(Node):
         """
         Publish allocation state to the fleet as TeamCommStamped.msg message
         """
+
+        # # TODO: Remove once pathfinding handled by controller -----
+        # # -> Update path to start task to ensure agent path starts from current position
+        # if self.agent.plan:
+        #     start_task = self.tasklog[self.agent.plan[0]]
+        #     self.update_path(
+        #         source=self.agent.id,
+        #         source_pos=(self.agent.state.x, self.agent.state.y),
+        #         target=start_task.id,
+        #         target_pos=(start_task.instructions["x"], start_task.instructions["y"])
+        #     )
+        # # TODO: ---------------------------------------------------
+
         # -> Create message
         msg = TeamCommStamped()
 
@@ -1028,30 +1033,41 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         if meta_action == "update":
-            # -> Update path to start task
-            if self.agent.plan.task_bundle:
-                start_task = self.tasklog[self.agent.plan.task_bundle[0]]
+            # TODO: Remove once pathfinding handled by controller -----
+            # -> Update path to start task to ensure agent path starts from current position
+            if self.agent.plan:
+                start_task = self.tasklog[self.agent.plan[0]]
                 self.update_path(
-                    source="agent",
+                    source=self.agent.id,
                     source_pos=(self.agent.state.x, self.agent.state.y),
                     target=start_task.id,
                     target_pos=(start_task.instructions["x"], start_task.instructions["y"])
                 )
 
-            update_success = self.agent.update_plan(tasklog=self.tasklog)
+            # update_success = self.agent.update_plan(tasklog=self.tasklog)
+            #
+            # if not update_success:
+            #     self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
 
-            if not update_success:
-                self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
+            # -> Embed paths in agent
+            agent_dict = self.agent.asdict()
+            agent_dict["plan"]["paths"] = self.agent.plan.get_paths(
+                agent_id=self.agent.id,
+                tasklog=self.tasklog,
+                requirement=None,  # TODO: Correct once path requirements are implemented
+                selection="shortest"  # TODO: Correct once path requirements are implemented
+            )
+            # TODO: ---------------------------------------------------
 
             # -> Gather tasks in plan
             tasks = {}
 
-            for task_id in self.agent.plan.task_bundle:
+            for task_id in self.agent.plan:
                 tasks[task_id] = self.tasklog[task_id].asdict()
 
             msg.target = self.id
             memo = {
-                "agent": self.agent.asdict(),
+                "agent": agent_dict,
                 "tasks": tasks,
                 "args": args,
                 "kwargs": kwargs
@@ -1071,12 +1087,6 @@ class MAAFAgent(Node):
         # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
     # >>>> Node specific
-    @abstractmethod
-    def update_allocation(self):
-        """
-        Update allocation state for the agent
-        """
-        pass
 
     # ---------------- tools
     @staticmethod
@@ -1187,7 +1197,8 @@ class MAAFAgent(Node):
 
         if compute_path:
             # -> Find the Manhattan distance between the agent and the task
-            path = nx.shortest_path(self.env["graph"], source_pos, target_pos)
+            path = self.env["all_pairs_shortest_paths"][source_pos][target_pos]
+            # path = nx.shortest_path(self.env["graph"], source_pos, target_pos)
             # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
 
         # > Store path to agent task log
@@ -1203,33 +1214,85 @@ class MAAFAgent(Node):
             selection="latest"
         )
 
-    @abstractmethod
     def priority_merge(
             self,
             task_id: str,
             agent_id: str,
 
-            # -> Updated matrix
-            # > Updated matrix value
-            matrix_updated: pd.DataFrame,
             matrix_updated_ij: float,
-
-            # > Updated priority value
-            matrix_priority_updated: pd.DataFrame,
             priority_updated_ij: float,
 
-            # -> Source matrix
-            # > Source matrix value
-            matrix_source: Optional[pd.DataFrame],
             matrix_source_ij: float,
-
-            # > Source priority value
-            matrix_priority_source: Optional[pd.DataFrame],
             priority_source_ij: float,
 
+            currently_assigned: bool,
             reset: bool = False
-        ):
+    ):
         """
-        Priority merge function for the agent
+        Merge two matrices values based on priority values. If source priority is higher, update the updated matrix value with the
+        source matrix. If updated priority is higher, do nothing. If priorities are equal, apply other tie-breakers.
+
+        Option to reset task value to zero if source priority is higher. If using reset, the tasks_value_x_ij must be
+        provided.
+
+        ### For logging purposes
+        :param task_id: Task id
+        :param agent_id: Agent id
+
+        ### Merging variables
+        :param matrix_updated_ij: Updated matrix value
+        :param matrix_source_ij: Source matrix value to compare with updated matrix value
+        :param priority_updated_ij: Updated priority value
+        :param priority_source_ij: Source priority value used to compare source matrix value with updated priority value
+
+        ### Reset variables
+        :param currently_assigned: Flag to check if the task is currently assigned
+        :param reset: Flag to reset task value to zero if source priority is higher
+
+        :return: Updated task value, updated matrix value, updated priority value
         """
-        pass
+
+        # -> If source priority is higher
+        if priority_source_ij > priority_updated_ij and matrix_source_ij > 0:
+
+            # -> Update matrix value with source matrix value
+            matrix_updated_ij = matrix_source_ij
+
+            # -> Update priority value with source priority value
+            priority_updated_ij = priority_source_ij
+
+            # -> Reset task value to zero to remove allocation
+            if reset and currently_assigned:
+                # -> Cancel goal
+                self.drop_task(
+                    task_id=task_id,
+                    reset=False,  # This reset is not for x, but for y (hence False)
+                    traceback="Priority merge reset",
+                    logger=True
+                )
+
+        # -> If updated priority is higher
+        elif priority_source_ij < priority_updated_ij:
+            # -> Do nothing as updated priority is higher, therefore keep updated matrix value and priority value
+            pass
+
+        # -> If priorities are equal
+        else:
+            # Apply other tie-breakers
+            # TODO: Implement tie-breakers, for now larger value is kept
+            matrix_updated_ij = max(matrix_updated_ij, matrix_source_ij)
+
+        return matrix_updated_ij, priority_updated_ij
+
+    # >>>> Node specific
+    @abstractmethod
+    def drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool):
+        """
+        Drop a task from the task list x or y. If reset is True, the task is removed from the task list x, otherwise it is removed from the task list y.
+
+        :param task_id: Task id
+        :param reset: Flag to reset task value to zero if source priority is higher
+        :param traceback: Reason for dropping the task
+        :param logger: Flag to log the task drop
+        """
+        raise NotImplementedError

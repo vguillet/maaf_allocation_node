@@ -6,7 +6,7 @@ import random
 from pprint import pformat
 
 # Libs
-from networkx import astar_path, shortest_path
+import networkx as nx
 
 # Own modules
 from maaf_tools.datastructures.task.Task import Task
@@ -16,8 +16,7 @@ from maaf_tools.datastructures.agent.Agent import Agent
 from maaf_tools.datastructures.agent.Fleet import Fleet
 from maaf_tools.datastructures.agent.AgentState import AgentState
 
-from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
-
+from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 from maaf_tools.tools import *
 
 ##################################################################################################################
@@ -39,18 +38,19 @@ def anticipated_action_task_interceding_agent(
         **kwargs
     ) -> list[dict]:
     """
-    For the provided agent, magnify the bid for the task if the agent has the skillset for the task
+    Calculate the bid for the provided agent as the inverse of the weighted Manhattan distance between the agent and the task.
+    Magnify the bid for the task if the agent has the skillset for the task
 
-    :param task: The task to calculate the distance to.
+    :param task: The task to calculate the bid for.
     :param tasklog: The task log to store the path for the current bid.
 
-    :param agent_lst: The list of agents to calculate the distance from.
-    :param fleet: The fleet of agents to calculate the distance from.
+    :param agent_lst: The list of agents to calculate the bid from.
+    :param fleet: The fleet of agents to calculate the bid from.
 
-    :param environment: The environment graph to calculate the distance in.
+    :param environment: The environment graph to calculate the distances in if necessary.
     :param logger: The logger to log messages to.
 
-    :return: A list of dictionaries containing the agent ID and the weighted Manhattan distance to the task.
+    :return: A list of dictionaries containing the agent(s) ID(s) and corresponding bid.
     """
 
     bids = []
@@ -116,7 +116,7 @@ def anticipated_action_task_interceding_agent(
 
         # -> If agent on a node in the path for the current bid, reuse and trim the path
         current_path = tasklog.get_path(
-            source="agent",
+            source=agent.id,
             target=task.id,
             requirement=None,
             selection="shortest"
@@ -136,12 +136,13 @@ def anticipated_action_task_interceding_agent(
 
         if compute_path:
             # -> Find the weigthed Manhattan distance between the agent and the task
-            path = shortest_path(environment["graph"], agent_node, task_node)
-            # path = astar_path(environment["graph"], agent_node, task_node, weight="weight")
+            path = environment["all_pairs_shortest_paths"][agent_node][task_node]
+            # path = nx.shortest_path(environment["graph"], agent_node, task_node)
+            # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
         # > Store path to agent task log
         tasklog.add_path(
-            source_node="agent",
+            source_node=agent.id,
             target_node=task.id,
             path={
                 "id": f"{agent.id}_{task.id}",

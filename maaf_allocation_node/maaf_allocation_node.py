@@ -16,7 +16,7 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 
 # Local Imports
-from .allocation_logics.ICBAA_allocation_node import ICBAANode
+from .allocation_logics.CBAA.ICBAA_allocation_node import ICBAANode
 
 
 ##################################################################################################################
