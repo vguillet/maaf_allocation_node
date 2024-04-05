@@ -44,10 +44,12 @@ from maaf_tools.datastructures.agent.Plan import Plan
 
 from maaf_tools.tools import *
 
-from maaf_allocation_node.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
-from maaf_allocation_node.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 ##################################################################################################################
+
+SHALLOW = 0
+DEEP = 1
 
 
 class ICBBANode(ICBAgent):
@@ -79,17 +81,19 @@ class ICBBANode(ICBAgent):
         Setup additional method-dependent allocation states for the agents
         """
         # ---- Local state
-        return
-        # """
-        # Local path list p of the agent
-        #
-        # List is a pandas dataframe with variable size, initialised empty, with task ids ordered in the sequence the agent will execute them.
-        # Corresponds to the task_bundle of the agent's plan.
-        # """
-        # self.task_path_p = pd.DataFrame(
-        #     columns=["task_path_p"]
-        # )
-        #
+        """
+        Bid depth e of the agent. Used to track the depth of the bids for each agent/task combination
+        > SHALLOW (0)
+        > DEEP    (1)  
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.bid_depth_e = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active,
+        )
+
         # """
         # Local bundle b of the agent
         #
@@ -112,6 +116,7 @@ class ICBBANode(ICBAgent):
         return {
             "path_p": pd.DataFrame(self.agent.plan.task_sequence, columns=["path_p"]),
             "bundle_b": pd.DataFrame(self.agent.plan.task_bundle, columns=["bundle_b"]),
+            "bid_depth_e": self.bid_depth_e,
 
             # > Base local allocation states
             "local_bids_c": self.local_bids_c,
@@ -297,20 +302,119 @@ class ICBBANode(ICBAgent):
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
             while len(self.agent.plan) < len(self.tasklog.pending_tasks):
+                # -> Calculate bids
                 # > List tasks not in plan
                 remaining_tasks = [task for task in self.tasklog.pending_tasks if task.id not in self.agent.plan]
 
                 # > For each task not in the plan ...
                 for task in remaining_tasks:
                     # -> Compute bids
-                    self.bid(task=task, agent=self.agent)   # TODO: Review to better integrate intercession
+                    self.bid(task=task, agent=[self.agent])   # TODO: Review to better integrate intercession
 
-    def bid(self, task: Task, agent: Agent) -> float:
+                # -> Merge local bids c into shared bids b
+                # > For each task ...
+                for task_id in self.tasklog.ids_pending:
+                    # > For each agent ...
+                    for agent_id in self.fleet.ids_active:
+                        # -> Priority merge local bids c into current bids b
+                        # > Determine correct matrix values
+                        shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
+                            # Logging
+                            task_id=task_id,
+                            agent_id=agent_id,
+
+                            # Merging
+                            matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
+                            matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
+                            priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                            priority_source_ij=self.hierarchy_level,
+
+                            # Reset
+                            currently_assigned=self.agent.plan.has_task(task_id),
+                            reset=False
+                        )
+
+                        # > Update local states
+                        self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                        self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
+
+                        # -> Merge local intercessions into allocation intercession
+                        if self.hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
+                            allocation_state = self.action_to_allocation_state(
+                                action=self.local_allocations_d.loc[task_id, agent_id]
+                            )
+
+                            if allocation_state is not None:
+                                self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
+
+                        # -> Merge current bids b into local bids c according to intercession depth e
+                        if self.bid_depth_e.loc[task_id, agent_id] == DEEP:
+                            self.local_bids_c.loc[task_id, agent_id] = self.shared_bids_b.loc[task_id, agent_id]
+
+                # ---- Select task
+                # -> Create list of valid tasks (pandas series of task ids initialised as 0)
+                valid_tasks_list_h = pd.DataFrame(
+                    np.zeros(len(remaining_tasks)),
+                    index=[task.id for task in remaining_tasks],
+                    columns=["valid_tasks_list_h"]
+                )
+
+                # > For each task ...
+                for task in remaining_tasks:
+                    # -> Create set of agents with imposed allocations
+                    agents_with_imposed_allocations = list(
+                        set(self.shared_allocations_a.loc[task.id, self.shared_allocations_a.loc[task.id] == 1].index))
+
+                    # > If there are imposed allocations, check if self is imposed allocation with the highest priority
+                    if len(agents_with_imposed_allocations) > 0:
+                        # -> Find agent with the highest priority
+                        winning_agent = self.shared_allocations_priority_alpha.loc[
+                            task.id, agents_with_imposed_allocations].idxmax()
+
+                        # TODO: Adjust to handle conflicting imposed allocations. For now assumed that allocation intercession is conflict-free
+
+                        # > If self is the winning agent, add the task to the task list
+                        if winning_agent == self.id:
+                            valid_tasks_list_h[task.id, "valid_tasks_list_h"] = 1
+                    else:
+                        # > If there are no imposed allocations, check if self has the highest bid and is not blacklisted
+                        valid_task = int(
+                            self.shared_allocations_a.loc[task.id, self.id] != -1 and self.shared_bids_b.loc[task.id, self.id] >
+                            self.winning_bids_y.loc[task.id, "winning_bids_y"])
+
+                        valid_tasks_list_h.loc[task.id, "valid_tasks_list_h"] = valid_task
+
+                # -> If there are valid tasks, select the task with the highest bid
+                if valid_tasks_list_h["valid_tasks_list_h"].sum() > 0:
+                    # -> Select task with the highest bid
+                    # > Get index of all the tasks for which the valid_tasks_list_h is 1
+                    valid_tasks = valid_tasks_list_h[valid_tasks_list_h["valid_tasks_list_h"] == 1].index.to_list()
+
+                    # > Get valid task with largest bid (using local bids !!!)
+                    selected_task_id = self.local_bids_c.loc[valid_tasks, self.id].idxmax()
+
+                    # -> Update winning bids
+                    self.winning_bids_y.loc[selected_task_id, "winning_bids_y"] = self.shared_bids_b.loc[selected_task_id, self.id]
+
+                    # -> Add task to plan
+                    self.agent.add_task_to_plan(
+                        tasklog=self.tasklog,
+                        task=selected_task_id,
+                        position=self.agent.local["insertions"][selected_task_id],
+                        logger=self.get_logger()
+                    )
+
+                    # > Publish goal msg
+                    self.publish_goal_msg(meta_action="update", traceback="Select task")
+
+    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Find the largest marginal gain achieved from inserting a task into the plan at the most beneficial position
 
         :param task: Task to bid for
-        :param agent: Agent to bid for
+        :param agent_lst: List of agents to compute bids for
+
+        :return: List of dictionaries containing the agent(s) ID(s) and corresponding marginal gains according to insertion position
         """
 
         if self.env is None:
@@ -322,6 +426,38 @@ class ICBBANode(ICBAgent):
         if self.bid_evaluation_function is None:
             return []
 
+        # -> Compute the marginal gains for the agent
+        agents_marginal_gains = self.bid_evaluation_function(
+            task=task,
+            tasklog=self.tasklog,
+            agent_lst=agent_lst,
+            fleet=self.fleet,
+            environment=self.env,
+            logger=self.get_logger()
+        )
+
+        # > For each agent ...
+        for marginal_gains in agents_marginal_gains:
+            # -> Find the insertion with the highest marginal gain
+            insertion_loc, bid = max(marginal_gains.items(), key=lambda x: x[1]["value"])
+
+            # -> Store bid to local bids matrix
+            # > Bid
+            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+
+            # > Bid depth
+            self.bid_depth_e.loc[task.id, bid["agent_id"]] = bid["bid_depth"]
+
+            # > Allocation
+            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+
+            # -> Store insertion to agent local
+            if ["insertions"] not in self.fleet[bid["agent_id"]].local:
+                self.fleet[bid["agent_id"]].local['insertions'] = {}
+
+            self.fleet[bid["agent_id"]].local['insertions'][task.id] = insertion_loc
+
+        return agents_marginal_gains
 
     def drop_task(self,
                   task_id: str,

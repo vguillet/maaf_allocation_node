@@ -21,6 +21,10 @@ from maaf_tools.tools import *
 
 ##################################################################################################################
 
+SHALLOW = 0
+DEEP = 1
+
+
 def graph_weighted_manhattan_distance_bundle_bid(
         # > Base parameters
         task: Task,
@@ -56,7 +60,8 @@ def graph_weighted_manhattan_distance_bundle_bid(
         "marginal_gains": {
             0: {
                 "value": ...,
-                "allocation": ... (0/1/2)
+                "allocation": ... (0/1/2),
+                "bid_depth": ... (0/1)
                 },
             1: {...},
             2: {...},
@@ -84,7 +89,8 @@ def graph_weighted_manhattan_distance_bundle_bid(
             for i in range(len(agent.plan)):
                 marginal_gains[i] = {
                     "value": 0,
-                    "allocation": 0
+                    "allocation": 0,
+                    "bid_depth": 0
                 }
 
             bids.append({
@@ -108,11 +114,52 @@ def graph_weighted_manhattan_distance_bundle_bid(
             new_plan.add_task(task, position=i)
 
             # -> Verify that all necessary paths have been computed
-            for source_node, target_node in zip(["agent"] + new_plan.task_sequence[:-1], new_plan.task_sequence[1:]):
+            for source_node, target_node in zip([agent.id] + new_plan.task_sequence[:-1], new_plan.task_sequence[1:]):
+                # -> If agent on a node in the path for the current bid, reuse and trim the path
+                current_path = tasklog.get_path(
+                    source=source_node,
+                    target=target_node,
+                    requirement=None,       # TODO: Fix once path requirements have been implemented
+                    selection="shortest"
+                )
 
-            # -> Calculate the marginal cost of the new plan
+                if current_path:
+                    current_path = current_path["path"]
+
+                    if agent_node in current_path:
+                        path = current_path[current_path.index(agent_node):]
+                        compute_path = False
+
+                    else:
+                        compute_path = True
+                else:
+                    compute_path = True
+
+                if compute_path:
+                    # -> Task node
+                    task_node = (task.instructions["x"], task.instructions["y"])
+
+                    # -> Find the weigthed Manhattan distance between the agent and the task
+                    path = environment["all_pairs_shortest_paths"][agent_node][task_node]
+                    # path = nx.shortest_path(environment["graph"], agent_node, task_node)
+                    # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
+
+                # > Store path to agent task log
+                tasklog.add_path(
+                    source_node=agent.id,
+                    target_node=task.id,
+                    path={
+                        "id": f"{agent.id}_{task.id}",
+                        "path": path,
+                        "requirements": ["ground"]       # TODO: Fix once path requirements have been implemented
+                    },
+                    two_way=False,
+                    selection="latest"
+                )
+
+            # -> Calculate the marginal gain of the new plan
             marginal_cost = consistent_random(
-                string=agent.id,
+                string=agent.id + task.id,
                 min_value=0.0000000000001,
                 max_value=0.000000001
             )  # Start with random tiny number to avoid division by zero and ties in allocation
@@ -120,8 +167,17 @@ def graph_weighted_manhattan_distance_bundle_bid(
             # > Calculate the size difference between the new and current path
             marginal_cost += len(new_plan.path) - len(agent.plan.path)
 
-            # > Store the marginal cost
+            # > Store the marginal gain
             marginal_gains[i] = {
                 "value": 1/marginal_cost,
-                "allocation": 0
+                "allocation": 0,
+                "bid_depth": SHALLOW
             }
+
+        # -> Add bid to the list
+        bids.append({
+            "agent_id": agent.id,
+            "marginal_gains": marginal_gains
+        })
+
+    return bids

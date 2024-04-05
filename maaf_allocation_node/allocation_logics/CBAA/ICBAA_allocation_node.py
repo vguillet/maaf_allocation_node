@@ -360,6 +360,54 @@ class ICBAANode(ICBAgent):
                 # -> Compute bids
                 self.bid(task=task, agent_lst=agent_lst)
 
+    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+        """
+        Bid for a task
+
+        :param task: Task object
+        :param agent_lst: List of agents to compute bids for
+
+        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
+        """
+
+        if self.env is None:
+            # -> Return 0 bids for all agents as the environment is not available
+            self.get_logger().warning("!!!!!! WARNING: Environment not available")
+            return []
+
+        # -> If no bid evaluation function, return empty list
+        if self.bid_evaluation_function is None:
+            return []
+
+        # -> Compute bids
+        task_bids = self.bid_evaluation_function(
+            task=task,
+            tasklog=self.tasklog,
+
+            agent_lst=agent_lst,
+            fleet=self.fleet,
+
+            environment=self.env,
+            logger=self.get_logger(),
+
+            shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
+            self_agent=self.agent,                                      # TODO: Cleanup
+            intercession_targets=self.scenario.intercession_targets     # TODO: Cleanup
+        )
+
+        # -> Store bids to local bids matrix
+        for bid in task_bids:
+            # > Bid
+            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+
+            # > Allocation
+            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+
+        # -> Set task bid reference state
+        task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
+
+        return task_bids
+
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
         Select a task to bid for based on the current state
@@ -389,7 +437,8 @@ class ICBAANode(ICBAgent):
                         priority_source_ij=self.hierarchy_level,
 
                         # Reset
-                        currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
+                        currently_assigned=self.agent.plan.has_task(task_id),
+                        # currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
                         reset=False
                     )
 
@@ -436,18 +485,18 @@ class ICBAANode(ICBAgent):
                 # -> Create set of agents with imposed allocations
                 agents_with_imposed_allocations = list(set(self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index))
 
-                # -> If there are imposed allocations, check if self is imposed allocation with the highest priority
+                # > If there are imposed allocations, check if self is imposed allocation with the highest priority
                 if len(agents_with_imposed_allocations) > 0:
                     # -> Find agent with the highest priority
                     winning_agent = self.shared_allocations_priority_alpha.loc[task_id, agents_with_imposed_allocations].idxmax()
 
                     # TODO: Adjust to handle conflicting imposed allocations. For now assumed that allocation intercession is conflict-free
 
-                    # -> If self is the winning agent, add the task to the task list
+                    # > If self is the winning agent, add the task to the task list
                     if winning_agent == self.id:
                         valid_tasks_list_h[task_id, "valid_tasks_list_h"] = 1
                 else:
-                    # -> If there are no imposed allocations, check if self has the highest bid and is not blacklisted
+                    # > If there are no imposed allocations, check if self has the highest bid and is not blacklisted
                     valid_task = int(self.shared_allocations_a.loc[task_id, self.id] != -1 and self.shared_bids_b.loc[task_id, self.id] > self.winning_bids_y.loc[task_id, "winning_bids_y"])
 
                     valid_tasks_list_h.loc[task_id, "valid_tasks_list_h"] = valid_task
@@ -458,7 +507,7 @@ class ICBAANode(ICBAgent):
                 # > Get index of all the tasks for which the valid_tasks_list_h is 1
                 valid_tasks = valid_tasks_list_h[valid_tasks_list_h["valid_tasks_list_h"] == 1].index.to_list()
 
-                # > Get valid task with largest bid
+                # > Get valid task with largest bid (using shared bids !!!)
                 selected_task_id = self.shared_bids_b.loc[valid_tasks, self.id].idxmax()
 
                 # -> Add task to the task list
@@ -469,7 +518,7 @@ class ICBAANode(ICBAgent):
 
                 # if RUN_MODE == SIM: # TODO: Enable once comm sim setup
 
-                # -> Assign goal
+                # -> Add task to plan
                 self.agent.add_task_to_plan(
                     tasklog=self.tasklog,
                     task=selected_task_id,

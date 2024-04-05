@@ -66,6 +66,11 @@ from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_m
 
 ##################################################################################################################
 
+FREE_ALLOCATION = 0
+BLACKLISTED = -1
+IMPOSED_ALLOCATION = 1
+NO_ACTION = None
+
 
 class MAAFAgent(Node):
     def __init__(
@@ -785,28 +790,19 @@ class MAAFAgent(Node):
 
         # -> Priority merge received bid into current bids b
         self.shared_bids_b, self.shared_bids_priority_beta = self.priority_merge(
+                                # Logging
                                 task_id=bid_msg.task_id,
                                 agent_id=bid_msg.target_agent_id,
 
-                                # -> Updated matrix
-                                # > Updated matrix value
-                                matrix_updated=self.shared_bids_b,
+                                # Merging
                                 matrix_updated_ij=self.shared_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
-
-                                # > Updated priority value
-                                matrix_priority_updated=self.shared_bids_priority_beta,
-                                priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
-
-                                # -> Source matrix
-                                # > Source matrix value
-                                matrix_source=None,
                                 matrix_source_ij=bid_msg.value,
-
-                                # > Source priority value
-                                matrix_priority_source=None,
+                                priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
                                 priority_source_ij=bid_msg.priority,
 
-                                reset=True
+                                # Reset
+                                currently_assigned=None,
+                                reset=False     # TODO: REVIEW (was True before refactor..?)
                                 )
 
         # -> Update allocation
@@ -840,28 +836,19 @@ class MAAFAgent(Node):
         if allocation_state is not None:
             # -> Merge received allocation into current allocation
             self.shared_allocations_a, self.shared_allocations_priority_alpha = self.priority_merge(
+                # Logging
                 task_id=allocation_msg.task_id,
                 agent_id=allocation_msg.target_agent_id,
 
-                # -> Updated matrix
-                # > Updated matrix value
-                matrix_updated=self.shared_allocations_a,
+                # Merging
                 matrix_updated_ij=self.shared_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-
-                # > Updated priority value
-                matrix_priority_updated=self.shared_allocations_priority_alpha,
-                priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-
-                # -> Source matrix
-                # > Source matrix value
-                matrix_source=None,
                 matrix_source_ij=allocation_state,
-
-                # > Source priority value
-                matrix_priority_source=None,
+                priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
                 priority_source_ij=allocation_msg.priority,
 
-                reset=True
+                # Reset
+                currently_assigned=None,
+                reset=False     # TODO: REVIEW (was True before refactor..?)
             )
 
             # -> Update allocation
@@ -921,70 +908,22 @@ class MAAFAgent(Node):
 
     # ---------------- Processes
     # >>>> Base
-    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
-        """
-        Bid for a task
-
-        :param task: Task object
-        :param agent_lst: List of agents to compute bids for
-
-        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
-        """
-
-        if self.env is None:
-            # -> Return 0 bids for all agents as the environment is not available
-            self.get_logger().warning("!!!!!! WARNING: Environment not available")
-            return []
-
-        # -> If no bid evaluation function, return empty list
-        if self.bid_evaluation_function is None:
-            return []
-
-        # -> Compute bids
-        task_bids = self.bid_evaluation_function(
-            task=task,
-            tasklog=self.tasklog,
-
-            agent_lst=agent_lst,
-            fleet=self.fleet,
-
-            environment=self.env,
-            logger=self.get_logger(),
-
-            shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
-            self_agent=self.agent,                                      # TODO: Cleanup
-            intercession_targets=self.scenario.intercession_targets     # TODO: Cleanup
-        )
-
-        # -> Store bids to local bids matrix
-        for bid in task_bids:
-            # > Bid
-            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
-
-            # > Allocation
-            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
-
-        # -> Set task bid reference state
-        task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
-
-        return task_bids
-
     def publish_allocation_state_msg(self):
         """
         Publish allocation state to the fleet as TeamCommStamped.msg message
         """
 
-        # # TODO: Remove once pathfinding handled by controller -----
-        # # -> Update path to start task to ensure agent path starts from current position
-        # if self.agent.plan:
-        #     start_task = self.tasklog[self.agent.plan[0]]
-        #     self.update_path(
-        #         source=self.agent.id,
-        #         source_pos=(self.agent.state.x, self.agent.state.y),
-        #         target=start_task.id,
-        #         target_pos=(start_task.instructions["x"], start_task.instructions["y"])
-        #     )
-        # # TODO: ---------------------------------------------------
+        # TODO: Remove once pathfinding handled by controller -----
+        # -> Update path to start task to ensure agent path starts from current position
+        if self.agent.plan:
+            start_task = self.tasklog[self.agent.plan[0]]
+            self.update_path(
+                source=self.agent.id,
+                source_pos=(self.agent.state.x, self.agent.state.y),
+                target=start_task.id,
+                target_pos=(start_task.instructions["x"], start_task.instructions["y"])
+            )
+        # TODO: ---------------------------------------------------
 
         # -> Create message
         msg = TeamCommStamped()
@@ -1087,7 +1026,6 @@ class MAAFAgent(Node):
         # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
     # >>>> Node specific
-
     # ---------------- tools
     @staticmethod
     def action_to_allocation_state(action: int) -> Optional[int]:
@@ -1099,13 +1037,13 @@ class MAAFAgent(Node):
         """
 
         if action == 1:
-            return 0            # Free allocation
+            return FREE_ALLOCATION
         elif action == 2:
-            return -1           # Blacklisted
+            return BLACKLISTED
         elif action == 3:
-            return 1            # Imposed allocation
+            return IMPOSED_ALLOCATION
         else:
-            return None         # No action
+            return NO_ACTION
 
     def rebroadcast(self, msg, publisher) -> tuple:
         """
@@ -1225,7 +1163,7 @@ class MAAFAgent(Node):
             matrix_source_ij: float,
             priority_source_ij: float,
 
-            currently_assigned: bool,
+            currently_assigned: Optional[bool],
             reset: bool = False
     ):
         """
@@ -1266,7 +1204,7 @@ class MAAFAgent(Node):
                 # -> Cancel goal
                 self.drop_task(
                     task_id=task_id,
-                    reset=False,  # This reset is not for x, but for y (hence False)
+                    reset=False,  # This reset is not for task drop, but for y (hence False)
                     traceback="Priority merge reset",
                     logger=True
                 )
@@ -1285,6 +1223,18 @@ class MAAFAgent(Node):
         return matrix_updated_ij, priority_updated_ij
 
     # >>>> Node specific
+    @abstractmethod
+    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+        """
+        Bid for a task
+
+        :param task: Task object
+        :param agent_lst: List of agents to compute bids for
+
+        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool):
         """
