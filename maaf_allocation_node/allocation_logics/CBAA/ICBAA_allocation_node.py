@@ -252,10 +252,12 @@ class ICBAANode(ICBAgent):
 
     def update_shared_states(
             self,
-            received_shared_bids_b,
-            received_shared_bids_priority_beta,
-            received_shared_allocations_a,
-            received_shared_allocations_priority_alpha
+            received_shared_bids_b: pd.DataFrame,
+            received_shared_bids_priority_beta: pd.DataFrame,
+            received_shared_allocations_a: pd.DataFrame,
+            received_shared_allocations_priority_alpha: pd.DataFrame,
+            *args,
+            **kwargs
     ):
         """
         Update local states with received states from the fleet

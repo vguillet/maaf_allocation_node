@@ -61,7 +61,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
             0: {
                 "value": ...,
                 "allocation": ... (0/1/2),
-                "bid_depth": ... (0/1)
+                "bids_depth": ... (0/1)
                 },
             1: {...},
             2: {...},
@@ -90,7 +90,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 marginal_gains[i] = {
                     "value": 0,
                     "allocation": 0,
-                    "bid_depth": 0
+                    "bids_depth": 0
                 }
 
             bids.append({
@@ -171,7 +171,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
             marginal_gains[i] = {
                 "value": 1/marginal_cost,
                 "allocation": 0,
-                "bid_depth": SHALLOW
+                "bids_depth": SHALLOW
             }
 
         # -> Add bid to the list

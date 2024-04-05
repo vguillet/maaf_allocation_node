@@ -131,9 +131,6 @@ class ICBAgent(MAAFAgent):
         # -> Update previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
-        # # > Publish goal msg
-        # self.publish_goal_msg(meta_action="update")
-
         # -> If state has changed, update local states (only publish when necessary)
         self.publish_allocation_state_msg()
 
@@ -173,12 +170,7 @@ class ICBAgent(MAAFAgent):
         )
 
         # -> Update shared states
-        self.update_shared_states(
-            received_shared_bids_b=received_allocation_state["shared_bids_b"],
-            received_shared_bids_priority_beta=received_allocation_state["shared_bids_priority_beta"],
-            received_shared_allocations_a=received_allocation_state["shared_allocations_a"],
-            received_shared_allocations_priority_alpha=received_allocation_state["shared_allocations_priority_alpha"]
-        )
+        self.update_shared_states(**received_allocation_state)
 
         # -> Update the task in the task list x the agent is assigned to
         for task in received_tasklog:
@@ -195,9 +187,6 @@ class ICBAgent(MAAFAgent):
 
         # -> Select new task
         self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change) # TODO: Cleanup
-
-        # # > Publish goal msg
-        # self.publish_goal_msg(meta_action="update")
 
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()

@@ -82,26 +82,39 @@ class ICBBANode(ICBAgent):
         """
         # ---- Local state
         """
-        Bid depth e of the agent. Used to track the depth of the bids for each agent/task combination
+        Bids depth e of the agent. Used to track the depth of the bids for each agent/task combination
         > SHALLOW (0)
         > DEEP    (1)  
 
         Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
         """
-        self.bid_depth_e = pd.DataFrame(
+        self.bids_depth_e = pd.DataFrame(
             np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
             index=self.tasklog.ids_pending,
             columns=self.fleet.ids_active,
         )
 
-        # """
-        # Local bundle b of the agent
-        #
-        # List is a pandas dataframe with variable size, initialised empty, with task ids ordered in the sequence the agent added them to its plan
-        # """
-        # self.bundle_b = pd.DataFrame(
-        #     columns=["bundle_b"]
-        # )
+        """
+        Winning agent list k. Used to track the winning agent for each task in winning bids y
+        
+        Matrix is a pandas dataframe of size N_t x 1, initialized as a matrix of empty strings, with task ids as index
+        """
+        self.winning_agents_k = pd.DataFrame(
+            np.array(["" for _ in range(self.Task_count_N_t)]),
+            index=self.tasklog.ids_pending,
+            columns=["winning_agents_k"]
+        )
+
+        """
+        Last update s. Used to track the last update time for each agent in the fleet
+        
+        Matrix is a pandas dataframe of size N_u x 1, initialized as zero matrix, with agent ids as index
+        """
+        self.last_update_s = pd.DataFrame(
+            np.zeros(self.Agent_count_N_u),
+            index=self.fleet.ids_active,
+            columns=["last_update_s"]
+        )
 
     # ============================================================== PROPERTIES
     # ---------------- Self state
@@ -116,7 +129,9 @@ class ICBBANode(ICBAgent):
         return {
             "path_p": pd.DataFrame(self.agent.plan.task_sequence, columns=["path_p"]),
             "bundle_b": pd.DataFrame(self.agent.plan.task_bundle, columns=["bundle_b"]),
-            "bid_depth_e": self.bid_depth_e,
+            "bids_depth_e": self.bids_depth_e,
+            "winning_agents_k": self.winning_agents_k,
+            "last_update_s": self.last_update_s,
 
             # > Base local allocation states
             "local_bids_c": self.local_bids_c,
@@ -162,6 +177,9 @@ class ICBBANode(ICBAgent):
             # > Remove winning_bids_y from the state (not needed for this operation)
             state.pop("winning_bids_y")
 
+            # > Remove winning_agents_k from the state (not needed for this operation)
+            state.pop("winning_agents_k")
+
             for matrix in state.values():
                 matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
 
@@ -190,6 +208,9 @@ class ICBBANode(ICBAgent):
             # > Remove winning_bids_y from the state (not needed for this operation)
             state.pop("winning_bids_y")
 
+            # > Remove winning_agents_k from the state (not needed for this operation)
+            state.pop("winning_agents_k")
+
             for matrix in state.values():
                 if agent.id in matrix.columns:
                     matrix.drop(columns=agent.id, inplace=True)
@@ -215,6 +236,13 @@ class ICBBANode(ICBAgent):
             # > Remove winning_bids_y from the state (operation performed separately)
             state.pop("winning_bids_y")
             self.winning_bids_y.loc[task.id] = 0
+
+            # > Remove winning_agents_k from the state (operation performed separately)
+            state.pop("winning_agents_k")
+            self.winning_agents_k.loc[task.id] = ""
+
+            # > Remove last_update_s from the state (not needed for this operation)
+            state.pop("last_update_s")
 
             for matrix in state.values():
                 matrix.loc[task.id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
@@ -246,6 +274,9 @@ class ICBBANode(ICBAgent):
             # > Remove bundle_b from the state (operation performed separately)
             state.pop("bundle_b")
 
+            # > Remove last_update_s from the state (not needed for this operation)
+            state.pop("last_update_s")
+
             for matrix in state.values():
                 if task.id in matrix.index:
                     matrix.drop(index=task.id, inplace=True)
@@ -274,21 +305,248 @@ class ICBBANode(ICBAgent):
 
     def update_shared_states(
             self,
-            received_shared_bids_b,
-            received_shared_bids_priority_beta,
-            received_shared_allocations_a,
-            received_shared_allocations_priority_alpha
-    ):
+            received_shared_bids_b: pd.DataFrame,
+            received_shared_bids_priority_beta: pd.DataFrame,
+            received_bids_depth_e: pd.DataFrame,
+            received_shared_allocations_a: pd.DataFrame,
+            received_shared_allocations_priority_alpha: pd.DataFrame,
+            *args,
+            **kwargs
+        ):
         """
         Update local states with received states from the fleet
 
         :param received_shared_bids_b: Task bids matrix b received from the fleet
         :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
+        :param received_bids_depth_e: Task bids depth matrix e received from the fleet
         :param received_shared_allocations_a: Task allocations matrix a received from the fleet
         :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
 
-        raise NotImplementedError
+        received_tasks_ids = list(received_shared_bids_b.index)
+        received_agent_ids = list(received_shared_bids_b.columns)
+
+        # -> For each task ...
+        for task_id in received_tasks_ids:
+            # -> If the task has been terminated, skip
+            if task_id not in self.tasklog.ids_pending:
+                continue
+
+            # -> for each agent ...
+            for agent_id in received_agent_ids:
+                pass
+
+    @staticmethod
+    def _update_decision(
+                         k_agent_id: str,
+                         k_winning_agent_id: str,
+                         k_winning_bid_y_kj,
+                         k_timestamp_matrix,
+
+                         i_agent_id: str,
+                         i_winning_agent_id: str,
+                         i_winning_bid_y_ij,
+                         i_timestamp_matrix
+                         ) -> str:
+        """
+        Generate an update decision
+        
+        :param k_agent_id: The agent k that sent the message
+        :param k_winning_agent_id: The agent that won the task in k's allocation
+        :param k_winning_bid_y_kj: The winning bid in k's allocation
+        :param k_timestamp_matrix: The timestamp matrix of agent k
+
+        :param i_agent_id: The agent i that received the message
+        :param i_winning_agent_id: The agent that won the task in i's allocation
+        :param i_winning_bid_y_ij: The winning bid in i's allocation
+        :param i_timestamp_matrix: The timestamp matrix of agent i
+
+        :return: The decision to update, reset, or leave the task
+        """
+
+        # -> k agent beliefs
+        k_thinks_agent_k_won = k_winning_agent_id == k_agent_id
+        k_thinks_agent_i_won = k_winning_agent_id == i_agent_id
+        k_thinks_agent_m_won = k_winning_agent_id not in [k_agent_id, i_agent_id] and k_winning_agent_id != ""
+        k_thinks_task_unassigned = k_winning_agent_id == ""
+
+        # > Verify that only one is true
+        assert sum([k_thinks_agent_k_won, k_thinks_agent_i_won, k_thinks_agent_m_won, k_thinks_task_unassigned]) == 1
+
+        # -> i agent beliefs
+        i_thinks_agent_i_won = i_winning_agent_id == i_agent_id
+        i_thinks_agent_k_won = i_winning_agent_id == k_agent_id
+        i_thinks_agent_m_won = i_winning_agent_id not in [i_agent_id, k_agent_id] and i_winning_agent_id != "" and i_winning_agent_id == k_winning_agent_id
+        i_thinks_agent_n_won = i_winning_agent_id not in [i_agent_id, k_agent_id, k_winning_agent_id] and i_winning_agent_id != ""
+        i_thinks_task_unassigned = i_winning_agent_id == ""
+
+        # > Verify that only one is true
+        assert sum([i_thinks_agent_i_won, i_thinks_agent_k_won, i_thinks_agent_m_won, i_thinks_agent_n_won, i_thinks_task_unassigned]) == 1
+
+        # --------------------------------------------------------- 1
+        # > Sender thinks they won the task
+        if k_thinks_agent_k_won:
+
+            # > Local agent thinks they won the task
+            if i_thinks_agent_i_won:
+                # > If the k has a higher bid: update
+                if k_winning_bid_y_kj > i_winning_bid_y_ij:
+                    return 'update'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks k won the task: update
+            elif i_thinks_agent_k_won:
+                return 'update'
+
+            # > Local agent thinks someone else won the task
+            elif i_thinks_agent_m_won:
+
+                # > If the k bid is more recent or higher: update
+                if (k_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]
+                        or k_winning_bid_y_kj > i_winning_bid_y_ij):
+                    return 'update'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks the task is unassigned: update
+            elif i_thinks_task_unassigned:
+                return 'update'
+
+            else:
+                raise ValueError("Invalid state")
+
+        # --------------------------------------------------------- 2
+        # > Sender thinks i agent won the task
+        elif k_thinks_agent_i_won:
+
+            # > Local agent thinks they won the task: leave
+            if i_thinks_agent_i_won:
+                return 'leave'
+
+            # > Local agent thinks k won the task: reset
+            elif i_thinks_agent_k_won:
+                return 'reset'
+
+            # > Local agent thinks someone else won the task
+            elif i_thinks_agent_m_won:
+                # > If the k bid is more recent: reset
+                if k_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]:
+                    return 'reset'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks the task is unassigned: leave
+            elif i_thinks_task_unassigned:
+                return 'leave'
+
+            else:
+                raise ValueError("Invalid state")
+
+        # --------------------------------------------------------- 3
+        # > Sender thinks someone else won the task
+        elif k_thinks_agent_m_won:
+
+            # > Local agent thinks they won the task
+            if i_thinks_agent_i_won:
+
+                # > If the k bid is more recent and higher: update
+                if (k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"]
+                        and k_winning_bid_y_kj > i_winning_bid_y_ij):
+                    return 'update'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks k won the task
+            elif i_thinks_agent_k_won:
+
+                # > If the k bid is more recent: update
+                if k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"]:
+                    return 'update'
+
+                # > Else: reset
+                else:
+                    return 'reset'
+
+            # > Local agent also thinks the same agent won the task
+            elif i_thinks_agent_m_won:
+
+                # > If the k bid is more recent and higher: update
+                if k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]:
+                    return 'update'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks someone else won the task, and it is not the same as the k's winning agent
+            elif i_thinks_agent_n_won:
+
+                # > If the k bid is more recent both ways: update
+                if (k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"]
+                        and k_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]):
+                    return 'update'
+
+                # > If the k bid is more recent and higher: update
+                elif (k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"]
+                      and k_winning_bid_y_kj > i_winning_bid_y_ij):
+                    return 'update'
+
+                # > If the bids both are more recent crosswise: reset
+                elif (k_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]
+                      and i_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"] > k_timestamp_matrix.loc[k_winning_agent_id, "last_update_s"]):
+                    return 'reset'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks the task is unassigned
+            elif i_thinks_task_unassigned:
+                return 'leave'
+
+            else:
+                raise ValueError("Invalid state")
+
+        # > Sender thinks the task is unassigned
+        elif k_thinks_task_unassigned:
+
+            # > Local agent thinks they won the task: leave
+            if i_thinks_agent_i_won:
+                return 'leave'
+
+            # > Local agent thinks k won the task: update
+            elif i_thinks_agent_k_won:
+                return 'update'
+
+            # > Local agent thinks someone else won the task
+            elif i_thinks_agent_m_won:
+
+                # > If the k bid is more recent: update
+                if k_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"] > i_timestamp_matrix.loc[i_winning_agent_id, "last_update_s"]:
+                    return 'update'
+
+                # > Default to leave
+                else:
+                    return 'leave'
+
+            # > Local agent thinks the task is unassigned
+            elif i_thinks_task_unassigned:
+                return 'leave'
+
+            else:
+                raise ValueError("Invalid state")
+
+        else:
+            raise ValueError("Invalid state")
 
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
@@ -348,7 +606,7 @@ class ICBBANode(ICBAgent):
                                 self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
 
                         # -> Merge current bids b into local bids c according to intercession depth e
-                        if self.bid_depth_e.loc[task_id, agent_id] == DEEP:
+                        if self.bids_depth_e.loc[task_id, agent_id] == DEEP:
                             self.local_bids_c.loc[task_id, agent_id] = self.shared_bids_b.loc[task_id, agent_id]
 
                 # ---- Select task
@@ -446,7 +704,7 @@ class ICBBANode(ICBAgent):
             self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
 
             # > Bid depth
-            self.bid_depth_e.loc[task.id, bid["agent_id"]] = bid["bid_depth"]
+            self.bids_depth_e.loc[task.id, bid["agent_id"]] = bid["bids_depth"]
 
             # > Allocation
             self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
