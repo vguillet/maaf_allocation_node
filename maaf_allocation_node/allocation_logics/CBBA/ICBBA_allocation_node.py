@@ -254,11 +254,11 @@ class ICBBANode(ICBAgent):
 
             # -> If self agent terminated task and task is current task id, only remove task
             if task.termination_source_id == self.id and task.id == self.agent.plan.current_task_id:
-                self.drop_task(task_id=task.id, forward=False)
+                self._drop_task(task_id=task.id, forward=False)
 
             # -> Cancel goal if task is assigned to self
             elif task.id in self.agent.plan:
-                self.drop_task(task_id=task.id, forward=True)
+                self._drop_task(task_id=task.id, forward=True)
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -303,38 +303,8 @@ class ICBBANode(ICBAgent):
 
         return task_state_change, fleet_state_change
 
-    def update_shared_states(
-            self,
-            received_shared_bids_b: pd.DataFrame,
-            received_shared_bids_priority_beta: pd.DataFrame,
-            received_bids_depth_e: pd.DataFrame,
-            received_shared_allocations_a: pd.DataFrame,
-            received_shared_allocations_priority_alpha: pd.DataFrame,
-            *args,
-            **kwargs
-        ):
-        """
-        Update local states with received states from the fleet
-
-        :param received_shared_bids_b: Task bids matrix b received from the fleet
-        :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param received_bids_depth_e: Task bids depth matrix e received from the fleet
-        :param received_shared_allocations_a: Task allocations matrix a received from the fleet
-        :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
-        """
-
-        received_tasks_ids = list(received_shared_bids_b.index)
-        received_agent_ids = list(received_shared_bids_b.columns)
-
-        # -> For each task ...
-        for task_id in received_tasks_ids:
-            # -> If the task has been terminated, skip
-            if task_id not in self.tasklog.ids_pending:
-                continue
-
-            # -> for each agent ...
-            for agent_id in received_agent_ids:
-                pass
+    def update_task(self):
+        pass
 
     @staticmethod
     def _update_decision(
@@ -567,7 +537,7 @@ class ICBBANode(ICBAgent):
                 # > For each task not in the plan ...
                 for task in remaining_tasks:
                     # -> Compute bids
-                    self.bid(task=task, agent=[self.agent])   # TODO: Review to better integrate intercession
+                    self._bid(task=task, agent=[self.agent])   # TODO: Review to better integrate intercession
 
                 # -> Merge local bids c into shared bids b
                 # > For each task ...
@@ -665,7 +635,7 @@ class ICBBANode(ICBAgent):
                     # > Publish goal msg
                     self.publish_goal_msg(meta_action="update", traceback="Select task")
 
-    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+    def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Find the largest marginal gain achieved from inserting a task into the plan at the most beneficial position
 
@@ -717,10 +687,10 @@ class ICBBANode(ICBAgent):
 
         return agents_marginal_gains
 
-    def drop_task(self,
+    def _drop_task(self,
                   task_id: str,
                   reset: bool = False,
-                  forward: bool = True, # Defaults to true to work with base priority merge method
+                  forward: bool = True,     # Must default to true to work with base priority merge method
                   traceback: str = None,
                   logger=True
                   ) -> None:

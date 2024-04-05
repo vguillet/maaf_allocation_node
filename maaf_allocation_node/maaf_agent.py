@@ -717,7 +717,7 @@ class MAAFAgent(Node):
 
             # -> Recompute local bids for all tasks
             for task in self.tasklog.tasks_pending:
-                task_bids = self.bid(task, [self.agent])
+                task_bids = self._bid(task, [self.agent])
 
                 # -> Store bids to local bids matrix
                 for bid in task_bids:
@@ -1202,9 +1202,9 @@ class MAAFAgent(Node):
             # -> Reset task value to zero to remove allocation
             if reset and currently_assigned:
                 # -> Cancel goal
-                self.drop_task(
+                self._drop_task(
                     task_id=task_id,
-                    reset=False,  # This reset is not for task drop, but for y (hence False)
+                    reset=False,    # This reset is not for task drop, but for y (hence False)
                     traceback="Priority merge reset",
                     logger=True
                 )
@@ -1224,7 +1224,7 @@ class MAAFAgent(Node):
 
     # >>>> Node specific
     @abstractmethod
-    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+    def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Bid for a task
 
@@ -1236,7 +1236,7 @@ class MAAFAgent(Node):
         raise NotImplementedError
 
     @abstractmethod
-    def drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool):
+    def _drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool):
         """
         Drop a task from the task list x or y. If reset is True, the task is removed from the task list x, otherwise it is removed from the task list y.
 

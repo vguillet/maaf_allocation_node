@@ -140,7 +140,7 @@ class ICBAgent(MAAFAgent):
 
         :param team_msg: TeamComm message
         """
-        # ---- Unpack msg
+        # ----- Unpack msg
         # -> Ignore self messages
         if team_msg.source == self.id:
             return
@@ -164,30 +164,32 @@ class ICBAgent(MAAFAgent):
         # > Convert received serialised fleet to fleet
         received_fleet = Fleet.from_dict(received_allocation_state["fleet"])
 
+        # ----- Update situation awareness
         task_state_change, fleet_state_change = self.update_situation_awareness(
             tasklog=received_tasklog,
             fleet=received_fleet
         )
 
-        # -> Update shared states
+        # ----- Update shared states
         self.update_shared_states(**received_allocation_state)
 
+        # ----- Update task
         # -> Update the task in the task list x the agent is assigned to
         for task in received_tasklog:
+            # > If task is terminated, skip
             if task.id not in self.tasklog.ids_pending:
                 continue
 
-            task_id = task.id
+            # > Update task
+            self.update_task(
+                received_winning_bids_y=received_allocation_state["winning_bids_y"],
+                task_id=task.id
+            )
 
-            if task_id in self.agent.plan:
-                self.update_task(
-                    received_winning_bids_y=received_allocation_state["winning_bids_y"],
-                    task_id=task_id
-                )
-
-        # -> Select new task
+        # ----- Update allocation
         self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change) # TODO: Cleanup
 
+        # ----- Publish allocation state if state has changed
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
 
@@ -196,46 +198,99 @@ class ICBAgent(MAAFAgent):
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # ---------------- Processes
-    def update_task(
+    def update_shared_states(
             self,
-            received_winning_bids_y: pd.DataFrame,
-            task_id: str
-    ) -> None:
+            shared_bids_b: pd.DataFrame,
+            shared_bids_priority_beta: pd.DataFrame,
+            shared_allocations_a: pd.DataFrame,
+            shared_allocations_priority_alpha: pd.DataFrame,
+            *args,
+            **kwargs
+    ):
+        """
+        Update local states with received states from the fleet
+
+        :param shared_bids_b: Task bids matrix b received from the fleet
+        :param shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
+        :param shared_allocations_a: Task allocations matrix a received from the fleet
+        :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
+        """
+
+        tasks_ids = list(shared_bids_b.index)
+        agent_ids = list(shared_bids_b.columns)
+
+        # -> For each task ...
+        for task_id in tasks_ids:
+            # -> If the task has been terminated, skip
+            if task_id not in self.tasklog.ids_pending:
+                continue
+
+            # -> for each agent ...
+            for agent_id in agent_ids:
+                #
+                # if agent_id not in self.fleet.ids_active:
+                #     continue
+
+                # -> Priority merge with reset received current bids b into local current bids b
+                # > Determine correct matrix values
+                shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = (
+                    self.priority_merge(
+                        # Logging
+                        task_id=task_id,
+                        agent_id=agent_id,
+
+                        # Merging
+                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
+                        matrix_source_ij=shared_bids_b.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                        priority_source_ij=shared_bids_priority_beta.loc[task_id, agent_id],
+
+                        # Reset
+                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                        reset=True
+                    )
+                )
+
+                # > Update local states
+                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
+
+                # -> Priority merge received current allocations a into local current allocations a
+                # > Determine correct matrix values
+                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = (
+                    self.priority_merge(
+                        # Logging
+                        task_id=task_id,
+                        agent_id=agent_id,
+
+                        # Merging
+                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
+                        matrix_source_ij=shared_allocations_a.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
+                        priority_source_ij=shared_allocations_priority_alpha.loc[task_id, agent_id],
+
+                        # Reset
+                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                        reset=True
+                    )
+                )
+
+                # > Update local states
+                self.shared_allocations_a.loc[task_id, agent_id] = shared_allocations_a_ij_updated
+                self.shared_allocations_priority_alpha.loc[task_id, agent_id] = shared_allocations_priority_alpha_ij_updated
+
+    @abstractmethod
+    def update_task(self,
+                    received_winning_bids_y: pd.DataFrame,
+                    task_id: str
+                    ) -> None:
         """
         Update current task based on received winning bids and updated allocation intercession from the fleet
 
         :param received_winning_bids_y: Winning bids list y received from the fleet
         :param task_id: task id
         """
-
-        # -> Create set of agents with imposed allocations
-        agents_with_imposed_allocations = set(
-            self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index.to_list()
-        )
-
-        # -> If there are imposed allocations, find the imposed allocation with the highest priority
-        if len(agents_with_imposed_allocations) > 0:
-            # -> Find agent with the highest priority
-            winning_agent = self.shared_allocations_priority_alpha.loc[
-                task_id, agents_with_imposed_allocations].idxmax()
-
-        else:
-            # -> Compare received winning bids with local winning bids
-            winning_agent = self.id if self.winning_bids_y.loc[task_id, "winning_bids_y"] >= \
-                                       received_winning_bids_y.loc[task_id, "winning_bids_y"] else None
-
-            # TODO: Fix self.winning_bids_y.loc[task_id] > received_winning_bids_y.loc[task_id] scenario. For now it is assumed that two agents cannot have the same bid for the same task
-
-        # -> Update task list x
-        # > If the winning agent is not the agent, remove the task from the task list
-        if winning_agent is not self.id:
-            # -> Cancel goal
-            self.drop_task(
-                task_id=task_id,
-                reset=False,
-                traceback="Task update",
-                logger=True
-            )
+        raise NotImplementedError
 
     @abstractmethod
     def update_allocation(self, reset_assignment: bool = False) -> None:

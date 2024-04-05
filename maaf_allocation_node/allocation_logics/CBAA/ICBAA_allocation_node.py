@@ -209,7 +209,7 @@ class ICBAANode(ICBAgent):
             # -> Cancel goal if task is assigned to self
             if self.task_list_x.loc[task.id, "task_list_x"] == 1:
                 # -> Cancel goal
-                self.drop_task(
+                self._drop_task(
                     task_id=task.id,
                     reset=False,
                     traceback="Task termination",
@@ -243,95 +243,14 @@ class ICBAANode(ICBAgent):
             tasklog=tasklog,
             add_task_callback=add_task,
             terminate_task_callback=terminate_task,
-            tasklog_state_change_callback=self.compute_bids,
+            tasklog_state_change_callback=self._compute_bids,
             prioritise_local=False,
             logger=self.get_logger()
         )
 
         return task_state_change, fleet_state_change
 
-    def update_shared_states(
-            self,
-            received_shared_bids_b: pd.DataFrame,
-            received_shared_bids_priority_beta: pd.DataFrame,
-            received_shared_allocations_a: pd.DataFrame,
-            received_shared_allocations_priority_alpha: pd.DataFrame,
-            *args,
-            **kwargs
-    ):
-        """
-        Update local states with received states from the fleet
-
-        :param received_shared_bids_b: Task bids matrix b received from the fleet
-        :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param received_shared_allocations_a: Task allocations matrix a received from the fleet
-        :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
-        """
-
-        received_tasks_ids = list(received_shared_bids_b.index)
-        received_agent_ids = list(received_shared_bids_b.columns)
-
-        # -> For each task ...
-        for task_id in received_tasks_ids:
-            # -> If the task has been terminated, skip
-            if task_id not in self.tasklog.ids_pending:
-                continue
-
-            # -> for each agent ...
-            for agent_id in received_agent_ids:
-                #
-                # if agent_id not in self.fleet.ids_active:
-                #     continue
-
-                # -> Priority merge with reset received current bids b into local current bids b
-                # > Determine correct matrix values
-                shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = (
-                    self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
-
-                        # Merging
-                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
-                        matrix_source_ij=received_shared_bids_b.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
-                        priority_source_ij=received_shared_bids_priority_beta.loc[task_id, agent_id],
-
-                        # Reset
-                        currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
-                        reset=True
-                    )
-                )
-
-                # > Update local states
-                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
-                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
-
-                # -> Priority merge received current allocations a into local current allocations a
-                # > Determine correct matrix values
-                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = (
-                    self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
-
-                        # Merging
-                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
-                        matrix_source_ij=received_shared_allocations_a.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
-                        priority_source_ij=received_shared_allocations_priority_alpha.loc[task_id, agent_id],
-
-                        # Reset
-                        currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
-                        reset=True
-                    )
-                )
-
-                # > Update local states
-                self.shared_allocations_a.loc[task_id, agent_id] = shared_allocations_a_ij_updated
-                self.shared_allocations_priority_alpha.loc[task_id, agent_id] = shared_allocations_priority_alpha_ij_updated
-
-    def compute_bids(self) -> None:
+    def _compute_bids(self) -> None:
         """
         Conditionally compute bids for all tasks based on the current state and the state the current
         bids were computed in. If the current state is different from the state the current bids were
@@ -360,9 +279,9 @@ class ICBAANode(ICBAgent):
                     agent_lst = [self.agent]
 
                 # -> Compute bids
-                self.bid(task=task, agent_lst=agent_lst)
+                self._bid(task=task, agent_lst=agent_lst)
 
-    def bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+    def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Bid for a task
 
@@ -409,6 +328,50 @@ class ICBAANode(ICBAgent):
         task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
 
         return task_bids
+
+    def update_task(
+            self,
+            received_winning_bids_y: pd.DataFrame,
+            task_id: str
+            ) -> None:
+        """
+        Update current task based on received winning bids and updated allocation intercession from the fleet
+
+        :param received_winning_bids_y: Winning bids list y received from the fleet
+        :param task_id: task id
+        """
+
+        if not self.agent.plan.has_task(task_id=task_id):
+            return
+
+        # -> Create set of agents with imposed allocations
+        agents_with_imposed_allocations = set(
+            self.shared_allocations_a.loc[task_id, self.shared_allocations_a.loc[task_id] == 1].index.to_list()
+        )
+
+        # -> If there are imposed allocations, find the imposed allocation with the highest priority
+        if len(agents_with_imposed_allocations) > 0:
+            # -> Find agent with the highest priority
+            winning_agent = self.shared_allocations_priority_alpha.loc[
+                task_id, agents_with_imposed_allocations].idxmax()
+
+        else:
+            # -> Compare received winning bids with local winning bids
+            winning_agent = self.id if self.winning_bids_y.loc[task_id, "winning_bids_y"] >= \
+                                       received_winning_bids_y.loc[task_id, "winning_bids_y"] else None
+
+            # TODO: Fix self.winning_bids_y.loc[task_id] > received_winning_bids_y.loc[task_id] scenario. For now it is assumed that two agents cannot have the same bid for the same task
+
+        # -> Update task list x
+        # > If the winning agent is not the agent, remove the task from the task list
+        if winning_agent is not self.id:
+            # -> Cancel goal
+            self._drop_task(
+                task_id=task_id,
+                reset=False,
+                traceback="Task update",
+                logger=True
+            )
 
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
@@ -466,7 +429,7 @@ class ICBAANode(ICBAgent):
                 task_id = self.task_list_x[self.task_list_x["task_list_x"] == 1].index[0]
 
                 # -> Cancel goal
-                self.drop_task(
+                self._drop_task(
                     task_id=task_id,
                     reset=True,     # Reset y to zero for the task
                     traceback="Reset assignment",
@@ -530,11 +493,11 @@ class ICBAANode(ICBAgent):
                 # > Publish goal msg
                 self.publish_goal_msg(meta_action="update", traceback="Select task")
 
-    def drop_task(self,
+    def _drop_task(self,
                   task_id: str,
                   reset: bool = False,
                   traceback: str = None,
-                  logger=True,
+                  logger=True
                   ) -> None:
         """
         Drop a task from the bundle list and plan

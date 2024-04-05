@@ -120,7 +120,7 @@ def graph_weighted_manhattan_distance_bid(
 
         # -> Calculate the total distance
         total_distance = consistent_random(
-            string=agent.id,
+            string=agent.id + task.id,
             min_value=0.0000000000001,
             max_value=0.000000001
         )    # Start with random tiny number to avoid division by zero and ties in allocation
