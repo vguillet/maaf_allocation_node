@@ -28,28 +28,48 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 import networkx as nx
 
 # Local Imports
-from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
-from orchestra_config.sim_config import *
+try:
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.sim_config import *
 
-from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
-from maaf_allocation_node.maaf_agent import MAAFAgent
-from maaf_allocation_node.allocation_logics.ICB_agent import ICBAgent
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+    from maaf_allocation_node.maaf_agent import MAAFAgent
+    from maaf_allocation_node.allocation_logics.ICB_agent import ICBAgent
 
-from maaf_tools.datastructures.task.Task import Task
-from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.datastructures.task.Task import Task
 
-from maaf_tools.datastructures.agent.Agent import Agent
-from maaf_tools.datastructures.agent.Fleet import Fleet
-from maaf_tools.datastructures.agent.Plan import Plan
+    from maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.datastructures.agent.Plan import Plan
 
-from maaf_tools.tools import *
+    from maaf_tools.tools import *
 
-from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+
+except ModuleNotFoundError:
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.orchestra_config.sim_config import *
+
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+    from maaf_allocation_node.maaf_allocation_node.maaf_agent import MAAFAgent
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.ICB_agent import ICBAgent
+
+    from maaf_tools.maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.maaf_tools.datastructures.task.Task import Task
+
+    from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
+
+    from maaf_tools.maaf_tools.tools import *
+
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 ##################################################################################################################
 
-SHALLOW = 0
-DEEP = 1
+SHALLOW = 1 # CANNOT BE ZERO, will clash with priority merge logic otherwise
+DEEP = 2
 
 
 class ICBBANode(ICBAgent):
@@ -129,21 +149,29 @@ class ICBBANode(ICBAgent):
         return {
             "path_p": pd.DataFrame(self.agent.plan.task_sequence, columns=["path_p"]),
             "bundle_b": pd.DataFrame(self.agent.plan.task_bundle, columns=["bundle_b"]),
-            "bids_depth_e": self.bids_depth_e,
-            "winning_agents_k": self.winning_agents_k,
-            "last_update_s": self.last_update_s,
 
             # > Base local allocation states
             "local_bids_c": self.local_bids_c,
             "local_allocations_d": self.local_allocations_d
         }
 
+    @property
+    def additional_shared_states(self) -> dict:
+        """
+        Additional shared states to be published to the fleet
+        """
+        return {
+            "winning_agents_k": self.winning_agents_k,
+            "last_update_s": self.last_update_s,
+            "bids_depth_e": self.bids_depth_e
+        }
+
     # ============================================================== METHODS
     # ---------------- Processes
     def update_situation_awareness(self,
-                                     tasklog: Optional[TaskLog],
-                                     fleet: Optional[Fleet]
-                                     ) -> Tuple[bool, bool]:
+                                   tasklog: Optional[TaskLog],
+                                   fleet: Optional[Fleet]
+                                   ) -> Tuple[bool, bool]:
         """
         Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
         local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
@@ -296,15 +324,183 @@ class ICBBANode(ICBAgent):
             tasklog=tasklog,
             add_task_callback=add_task,
             terminate_task_callback=terminate_task,
-            tasklog_state_change_callback=self.compute_bids,
+            tasklog_state_change_callback=None,
             prioritise_local=False,
             logger=self.get_logger()
         )
 
         return task_state_change, fleet_state_change
 
-    def update_task(self):
-        pass
+    def update_shared_states(self,
+                             agent: Agent,
+
+                             shared_bids_b: pd.DataFrame,
+                             bids_depth_e: pd.DataFrame,
+                             shared_bids_priority_beta: pd.DataFrame,
+
+                             shared_allocations_a: pd.DataFrame,
+                             shared_allocations_priority_alpha: pd.DataFrame,
+                             *args,
+                             **kwargs
+                             ):
+        """
+        Update local states with received states from the fleet
+
+        :param agent: The agent that sent the message
+
+        :param shared_bids_b: Task bids matrix b received from the fleet
+        :param bids_depth_e: Task bids depth matrix e received from the fleet
+        :param shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
+
+        :param shared_allocations_a: Task allocations matrix a received from the fleet
+        :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
+        """
+
+        # -> Update last update s of received agent to latest
+        if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
+            self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
+
+        # -> Get task and agent ids
+        tasks_ids = list(shared_bids_b.index)
+        agent_ids = list(shared_bids_b.columns)
+
+        # -> For each task ...
+        for task_id in tasks_ids:
+            # -> If the task has been terminated, skip
+            if task_id not in self.tasklog.ids_pending:
+                continue
+
+            # -> for each agent ...
+            for agent_id in agent_ids:
+                # if agent_id not in self.fleet.ids_active:
+                #     continue
+
+                # ----- Priority merge with reset received current bids b into local current bids b
+                # > Determine correct matrix values
+                shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
+                        # Logging
+                        task_id=task_id,
+                        agent_id=agent_id,
+
+                        # Merging
+                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
+                        matrix_source_ij=shared_bids_b.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                        priority_source_ij=shared_bids_priority_beta.loc[task_id, agent_id],
+
+                        greater_than_zero_condition=True,
+
+                        # Reset
+                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                        reset=True
+                        )
+
+                # > Update local states
+                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+
+                # ----- Priority merge received bids_depth_e into local bids_depth_e
+                # > Determine correct matrix values
+                bids_depth_e_ij_updated, _ = self.priority_merge(
+                        # Logging
+                        task_id=task_id,
+                        agent_id=agent_id,
+
+                        # Merging
+                        matrix_updated_ij=self.bids_depth_e.loc[task_id, agent_id],
+                        matrix_source_ij=bids_depth_e.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                        priority_source_ij=shared_bids_priority_beta.loc[task_id, agent_id],
+
+                        greater_than_zero_condition=False,
+
+                        # Reset
+                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                        reset=True
+                        )
+
+                # > Update local states
+                self.bids_depth_e.loc[task_id, agent_id] = bids_depth_e_ij_updated
+
+                # -> Update local shared bids priority beta last
+                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
+
+                # ----- Priority merge received current allocations a into local current allocations a
+                # > Determine correct matrix values
+                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = self.priority_merge(
+                        # Logging
+                        task_id=task_id,
+                        agent_id=agent_id,
+
+                        # Merging
+                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
+                        matrix_source_ij=shared_allocations_a.loc[task_id, agent_id],
+                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
+                        priority_source_ij=shared_allocations_priority_alpha.loc[task_id, agent_id],
+
+                        greater_than_zero_condition=False,
+
+                        # Reset
+                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                        reset=True
+                        )
+
+                # > Update local states
+                self.shared_allocations_a.loc[task_id, agent_id] = shared_allocations_a_ij_updated
+                self.shared_allocations_priority_alpha.loc[task_id, agent_id] = shared_allocations_priority_alpha_ij_updated
+
+    def update_task(self,
+                    task: Task,
+                    agent: Agent,
+                    winning_bids_y: pd.DataFrame,
+                    winning_agents_k: pd.DataFrame,
+                    last_update_s: pd.DataFrame,
+                    ):
+
+        # -> Create set of agents with imposed allocations
+        agents_with_imposed_allocations = set(
+            self.shared_allocations_a.loc[task.id, self.shared_allocations_a.loc[task.id] == 1].index.to_list()
+        )
+
+        # -> If there are imposed allocations, find the imposed allocation with the highest priority
+        if len(agents_with_imposed_allocations) > 0:
+            # > Find agent with the highest priority
+            winning_agent = self.shared_allocations_priority_alpha.loc[
+                task.id, agents_with_imposed_allocations].idxmax()
+
+        else:
+            # -> Get update decision
+            update_decision = self._update_decision(
+                k_agent_id=agent.id,
+                k_winning_agent_id=winning_agents_k.loc[task.id, "winning_agents_k"],
+                k_winning_bid_y_kj=winning_bids_y.loc[task.id, agent.id],
+                k_timestamp_matrix=last_update_s,
+
+                i_agent_id=self.agent.id,
+                i_winning_agent_id=self.winning_agents_k.loc[task.id, "winning_agents_k"],
+                i_winning_bid_y_ij=self.winning_bids_y.loc[task.id],
+                i_timestamp_matrix=self.last_update_s
+            )
+
+            # -> Apply update decision
+            if update_decision == "update":
+                # > Update winning bids y
+                self.winning_bids_y.loc[task.id, "winning_bids_y"] = winning_bids_y.loc[task.id, "winning_bids_y"]
+
+                # > Update winning agents k
+                self.winning_agents_k.loc[task.id, "winning_agents_k"] = winning_agents_k.loc[task.id, "winning_agents_k"]
+
+            elif update_decision == "reset":
+                # > Reset winning bids y
+                self.winning_bids_y.loc[task.id, "winning_bids_y"] = 0
+
+                # > Reset winning agents k
+                self.winning_agents_k.loc[task.id, "winning_agents_k"] = ""
+
+            elif update_decision == "leave":
+                pass
+
+            else:
+                raise ValueError("Invalid update decision")
 
     @staticmethod
     def _update_decision(
@@ -556,6 +752,8 @@ class ICBBANode(ICBAgent):
                             matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
                             priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
                             priority_source_ij=self.hierarchy_level,
+
+                            greater_than_zero_condition=True,
 
                             # Reset
                             currently_assigned=self.agent.plan.has_task(task_id),

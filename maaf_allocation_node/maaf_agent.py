@@ -21,7 +21,7 @@ CAF:
 # Built-in/Generic Imports
 import sys
 from abc import abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from json import dumps, loads
 import warnings
 from copy import deepcopy
@@ -44,25 +44,47 @@ from geometry_msgs.msg import Twist, PoseStamped, Point
 import networkx as nx
 
 # Local Imports
-from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
-from orchestra_config.sim_config import *
+try:
+    from rlb_simple_sim.Scenario import Scenario
 
-from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
-from rlb_simple_sim.Scenario import Scenario
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.sim_config import *
 
-from maaf_tools.datastructures.task.Task import Task
-from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 
-from maaf_tools.datastructures.agent.Agent import Agent
-from maaf_tools.datastructures.agent.Fleet import Fleet
-from maaf_tools.datastructures.agent.AgentState import AgentState
-from maaf_tools.datastructures.agent.Plan import Plan
+    from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.datastructures.task.Task import Task
 
-from maaf_tools.tools import *
+    from maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.datastructures.agent.AgentState import AgentState
+    from maaf_tools.datastructures.agent.Plan import Plan
 
-# from .bidding_logics.random_bid import random_bid
-from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
-from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+    from maaf_tools.tools import *
+
+    from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+    from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+
+except ModuleNotFoundError:
+    from rlb_simple_sim.rlb_simple_sim.Scenario import Scenario
+
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.orchestra_config.sim_config import *
+
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+
+    from maaf_tools.maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.maaf_tools.datastructures.task.Task import Task
+
+    from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.maaf_tools.datastructures.agent.AgentState import AgentState
+    from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
+
+    from maaf_tools.maaf_tools.tools import *
+
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 ##################################################################################################################
 
@@ -73,14 +95,13 @@ NO_ACTION = None
 
 
 class MAAFAgent(Node):
-    def __init__(
-            self,
-            node_name: str,
-            id: str = None,
-            name: str = None,
-            skillset: List[str] = None,
-            bid_estimator=None
-        ):
+    def __init__(self,
+                 node_name: str,
+                 id: str = None,
+                 name: str = None,
+                 skillset: List[str] = None,
+                 bid_estimator=None
+                 ):
         """
         maaf agent class
         """
@@ -675,8 +696,20 @@ class MAAFAgent(Node):
             "shared_bids_b": self.shared_bids_b,
             "shared_bids_priority_beta": self.shared_bids_priority_beta,
             "shared_allocations_a": self.shared_allocations_a,
-            "shared_allocations_priority_alpha": self.shared_allocations_priority_alpha
+            "shared_allocations_priority_alpha": self.shared_allocations_priority_alpha,
+            **self.additional_shared_states
         }
+
+    @property
+    def additional_shared_states(self) -> dict:
+        """
+        OPTIONAL
+        Additional (algo specific) shared states at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
+
+        :return: dict
+        """
+        return {}
 
     @property
     @abstractmethod
@@ -800,6 +833,8 @@ class MAAFAgent(Node):
                                 priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
                                 priority_source_ij=bid_msg.priority,
 
+                                greater_than_zero_condition=True,
+
                                 # Reset
                                 currently_assigned=None,
                                 reset=False     # TODO: REVIEW (was True before refactor..?)
@@ -846,6 +881,8 @@ class MAAFAgent(Node):
                 priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
                 priority_source_ij=allocation_msg.priority,
 
+                greater_than_zero_condition=False,
+
                 # Reset
                 currently_assigned=None,
                 reset=False     # TODO: REVIEW (was True before refactor..?)
@@ -877,25 +914,29 @@ class MAAFAgent(Node):
 
     # >>>> Node specific
     @abstractmethod
-    def update_situation_awareness(self, task_list: Optional[List[Task]], fleet: Optional[List[Agent]]) -> None:
+    def update_situation_awareness(self,
+                                   tasklog: Optional[TaskLog],
+                                   fleet: Optional[Fleet]
+                                   ) -> Tuple[bool, bool]:
         """
         Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
         local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
         they are no longer in the task list or fleet.
 
-        :param task_list: Tasks dict
-        :param fleet: Fleet dict
+        :param tasklog: Task log to merge
+        :param fleet: Fleet to merge
+
+        :return: Tuple of bools (task_state_change, fleet_state_change)
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
-    def update_shared_states(
-            self,
-            received_shared_bids_b,
-            received_shared_bids_priority_beta,
-            received_shared_allocations_a,
-            received_shared_allocations_priority_alpha
-    ):
+    def update_shared_states(self,
+                             received_shared_bids_b,
+                             received_shared_bids_priority_beta,
+                             received_shared_allocations_a,
+                             received_shared_allocations_priority_alpha
+                             ):
         """
         Update local states with received states from the fleet
 
@@ -904,7 +945,7 @@ class MAAFAgent(Node):
         :param received_shared_allocations_a: Task allocations matrix a received from the fleet
         :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
-        pass
+        raise NotImplementedError
 
     # ---------------- Processes
     # >>>> Base
@@ -1152,20 +1193,24 @@ class MAAFAgent(Node):
             selection="latest"
         )
 
-    def priority_merge(
-            self,
-            task_id: str,
-            agent_id: str,
+    def priority_merge(self,
+                       # Logging
+                       task_id: str,
+                       agent_id: str,
 
-            matrix_updated_ij: float,
-            priority_updated_ij: float,
+                       # Merging
+                       matrix_updated_ij: float,
+                       priority_updated_ij: float,
 
-            matrix_source_ij: float,
-            priority_source_ij: float,
+                       matrix_source_ij: float,
+                       priority_source_ij: float,
 
-            currently_assigned: Optional[bool],
-            reset: bool = False
-    ):
+                       greater_than_zero_condition: bool = True,
+
+                       # Reset
+                       currently_assigned: Optional[bool] = None,
+                       reset: bool = False
+                       ):
         """
         Merge two matrices values based on priority values. If source priority is higher, update the updated matrix value with the
         source matrix. If updated priority is higher, do nothing. If priorities are equal, apply other tie-breakers.
@@ -1183,6 +1228,8 @@ class MAAFAgent(Node):
         :param priority_updated_ij: Updated priority value
         :param priority_source_ij: Source priority value used to compare source matrix value with updated priority value
 
+        :param greater_than_zero_condition: Condition to check if the source matrix value is greater than zero
+
         ### Reset variables
         :param currently_assigned: Flag to check if the task is currently assigned
         :param reset: Flag to reset task value to zero if source priority is higher
@@ -1190,8 +1237,13 @@ class MAAFAgent(Node):
         :return: Updated task value, updated matrix value, updated priority value
         """
 
+        if greater_than_zero_condition:
+            greater_than_zero_condition_met = matrix_source_ij > 0
+        else:
+            greater_than_zero_condition_met = True
+
         # -> If source priority is higher
-        if priority_source_ij > priority_updated_ij and matrix_source_ij > 0:
+        if priority_source_ij > priority_updated_ij and greater_than_zero_condition_met:
 
             # -> Update matrix value with source matrix value
             matrix_updated_ij = matrix_source_ij

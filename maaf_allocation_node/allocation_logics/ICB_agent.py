@@ -29,20 +29,37 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 import networkx as nx
 
 # Local Imports
-from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
-from orchestra_config.sim_config import *
+try:
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.sim_config import *
 
-from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
-from maaf_allocation_node.maaf_agent import MAAFAgent
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+    from maaf_allocation_node.maaf_agent import MAAFAgent
 
-from maaf_tools.datastructures.task.Task import Task
-from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.datastructures.task.TaskLog import TaskLog
+    from maaf_tools.datastructures.task.Task import Task
 
-from maaf_tools.datastructures.agent.Agent import Agent
-from maaf_tools.datastructures.agent.Fleet import Fleet
-from maaf_tools.datastructures.agent.Plan import Plan
+    from maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.datastructures.agent.Plan import Plan
 
-from maaf_tools.tools import *
+    from maaf_tools.tools import *
+
+except ModuleNotFoundError:
+    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.orchestra_config.sim_config import *
+
+    from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
+    from maaf_allocation_node.maaf_allocation_node.maaf_agent import MAAFAgent
+
+    from maaf_tools.maaf_tools.datastructures.task.Task import Task
+    from maaf_tools.maaf_tools.datastructures.task.TaskLog import TaskLog
+
+    from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
+
+    from maaf_tools.maaf_tools.tools import *
 
 ##################################################################################################################
 
@@ -170,8 +187,14 @@ class ICBAgent(MAAFAgent):
             fleet=received_fleet
         )
 
+        # -> Get received agent
+        received_agent = self.fleet[team_msg.source]
+
         # ----- Update shared states
-        self.update_shared_states(**received_allocation_state)
+        self.update_shared_states(
+            agent=received_agent,
+            **received_allocation_state
+        )
 
         # ----- Update task
         # -> Update the task in the task list x the agent is assigned to
@@ -182,8 +205,9 @@ class ICBAgent(MAAFAgent):
 
             # > Update task
             self.update_task(
-                received_winning_bids_y=received_allocation_state["winning_bids_y"],
-                task_id=task.id
+                task=task,
+                agent=received_agent,
+                **received_allocation_state,
             )
 
         # ----- Update allocation
@@ -198,97 +222,20 @@ class ICBAgent(MAAFAgent):
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # ---------------- Processes
-    def update_shared_states(
-            self,
-            shared_bids_b: pd.DataFrame,
-            shared_bids_priority_beta: pd.DataFrame,
-            shared_allocations_a: pd.DataFrame,
-            shared_allocations_priority_alpha: pd.DataFrame,
-            *args,
-            **kwargs
-    ):
+    def update_shared_states(self, *args, **kwargs):
         """
         Update local states with received states from the fleet
 
-        :param shared_bids_b: Task bids matrix b received from the fleet
-        :param shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param shared_allocations_a: Task allocations matrix a received from the fleet
-        :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
+        Parameters are algorithm-specific
         """
-
-        tasks_ids = list(shared_bids_b.index)
-        agent_ids = list(shared_bids_b.columns)
-
-        # -> For each task ...
-        for task_id in tasks_ids:
-            # -> If the task has been terminated, skip
-            if task_id not in self.tasklog.ids_pending:
-                continue
-
-            # -> for each agent ...
-            for agent_id in agent_ids:
-                #
-                # if agent_id not in self.fleet.ids_active:
-                #     continue
-
-                # -> Priority merge with reset received current bids b into local current bids b
-                # > Determine correct matrix values
-                shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = (
-                    self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
-
-                        # Merging
-                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
-                        matrix_source_ij=shared_bids_b.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
-                        priority_source_ij=shared_bids_priority_beta.loc[task_id, agent_id],
-
-                        # Reset
-                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
-                        reset=True
-                    )
-                )
-
-                # > Update local states
-                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
-                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
-
-                # -> Priority merge received current allocations a into local current allocations a
-                # > Determine correct matrix values
-                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = (
-                    self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
-
-                        # Merging
-                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
-                        matrix_source_ij=shared_allocations_a.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
-                        priority_source_ij=shared_allocations_priority_alpha.loc[task_id, agent_id],
-
-                        # Reset
-                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
-                        reset=True
-                    )
-                )
-
-                # > Update local states
-                self.shared_allocations_a.loc[task_id, agent_id] = shared_allocations_a_ij_updated
-                self.shared_allocations_priority_alpha.loc[task_id, agent_id] = shared_allocations_priority_alpha_ij_updated
+        raise NotImplementedError
 
     @abstractmethod
-    def update_task(self,
-                    received_winning_bids_y: pd.DataFrame,
-                    task_id: str
-                    ) -> None:
+    def update_task(self, *args, **kwargs) -> None:
         """
         Update current task based on received winning bids and updated allocation intercession from the fleet
 
-        :param received_winning_bids_y: Winning bids list y received from the fleet
-        :param task_id: task id
+        Parameters are algorithm-specific
         """
         raise NotImplementedError
 
