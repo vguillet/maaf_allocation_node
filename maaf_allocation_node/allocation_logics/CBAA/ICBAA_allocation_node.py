@@ -49,7 +49,7 @@ try:
     from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 
 except ModuleNotFoundError:
-    from orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.orchestra_config.orchestra_config import *     # KEEP THIS LINE, DO NOT REMOVE
     from orchestra_config.orchestra_config.sim_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation

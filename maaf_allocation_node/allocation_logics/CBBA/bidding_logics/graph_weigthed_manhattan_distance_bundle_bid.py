@@ -10,14 +10,25 @@ from copy import deepcopy
 import networkx as nx
 
 # Own modules
-from maaf_tools.datastructures.task.Task import Task
-from maaf_tools.datastructures.task.TaskLog import TaskLog
+try:
+    from maaf_tools.datastructures.task.Task import Task
+    from maaf_tools.datastructures.task.TaskLog import TaskLog
 
-from maaf_tools.datastructures.agent.Agent import Agent
-from maaf_tools.datastructures.agent.Fleet import Fleet
-from maaf_tools.datastructures.agent.AgentState import AgentState
+    from maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.datastructures.agent.AgentState import AgentState
 
-from maaf_tools.tools import *
+    from maaf_tools.tools import *
+
+except ModuleNotFoundError:
+    from maaf_tools.maaf_tools.datastructures.task.Task import Task
+    from maaf_tools.maaf_tools.datastructures.task.TaskLog import TaskLog
+
+    from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.maaf_tools.datastructures.agent.AgentState import AgentState
+
+    from maaf_tools.maaf_tools.tools import *
 
 ##################################################################################################################
 
@@ -108,13 +119,13 @@ def graph_weighted_manhattan_distance_bundle_bid(
 
         for i in range(len(agent.plan) + 1):
             # -> Construct the new plan
-            new_plan = deepcopy(agent.plan)
+            new_plan = agent.plan.clone()
 
             # > Insert the task at the insertion position
             new_plan.add_task(task, position=i)
 
             # -> Verify that all necessary paths have been computed
-            for source_node, target_node in zip([agent.id] + new_plan.task_sequence[:-1], new_plan.task_sequence[1:]):
+            for source_node, target_node in new_plan.get_node_pairs(agent_id=agent.id):
                 # -> If agent on a node in the path for the current bid, reuse and trim the path
                 current_path = tasklog.get_path(
                     source=source_node,
@@ -136,18 +147,28 @@ def graph_weighted_manhattan_distance_bundle_bid(
                     compute_path = True
 
                 if compute_path:
-                    # -> Task node
-                    task_node = (task.instructions["x"], task.instructions["y"])
+                    # -> Get nodes position
+                    # > Source node
+                    if source_node in fleet:
+                        source_node_loc = (fleet[source_node].state.x, fleet[source_node].state.y)
+                    else:
+                        source_node_loc = (tasklog[source_node].instructions["x"], tasklog[source_node].instructions["y"])
+
+                    # > Target node
+                    if target_node in fleet:
+                        target_node_loc = (fleet[target_node].state.x, fleet[target_node].state.y)
+                    else:
+                        target_node_loc = (tasklog[target_node].instructions["x"], tasklog[target_node].instructions["y"])
 
                     # -> Find the weigthed Manhattan distance between the agent and the task
-                    path = environment["all_pairs_shortest_paths"][agent_node][task_node]
+                    path = environment["all_pairs_shortest_paths"][source_node_loc][target_node_loc]
                     # path = nx.shortest_path(environment["graph"], agent_node, task_node)
                     # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
                 # > Store path to agent task log
                 tasklog.add_path(
-                    source_node=agent.id,
-                    target_node=task.id,
+                    source_node=source_node,
+                    target_node=target_node,
                     path={
                         "id": f"{agent.id}_{task.id}",
                         "path": path,
@@ -162,14 +183,28 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 string=agent.id + task.id,
                 min_value=0.0000000000001,
                 max_value=0.000000001
-            )  # Start with random tiny number to avoid division by zero and ties in allocation
+            )   # Start with random tiny number to avoid division by zero and ties in allocation
 
             # > Calculate the size difference between the new and current path
-            marginal_cost += len(new_plan.path) - len(agent.plan.path)
+            plan_path, _, _ = agent.plan.get_path(
+                agent_id=agent.id,
+                tasklog=tasklog,
+                requirement=None,       # TODO: Fix once path requirements have been implemented
+                selection="shortest"
+            )
+
+            new_plan_path, _, _ = new_plan.get_path(
+                agent_id=agent.id,
+                tasklog=tasklog,
+                requirement=None,       # TODO: Fix once path requirements have been implemented
+                selection="shortest"
+            )
+
+            marginal_cost = 1/marginal_cost + 1/len(new_plan_path) - 1/len(plan_path)
 
             # > Store the marginal gain
             marginal_gains[i] = {
-                "value": 1/marginal_cost,
+                "value": marginal_cost,
                 "allocation": 0,
                 "bids_depth": SHALLOW
             }

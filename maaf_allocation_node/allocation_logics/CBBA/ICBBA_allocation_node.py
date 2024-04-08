@@ -48,7 +48,7 @@ try:
     from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 except ModuleNotFoundError:
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
+    from orchestra_config.orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
     from orchestra_config.orchestra_config.sim_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
@@ -207,6 +207,10 @@ class ICBBANode(ICBAgent):
 
             # > Remove winning_agents_k from the state (not needed for this operation)
             state.pop("winning_agents_k")
+
+            # > Remove last_update_s from the state (operation performed separately)
+            state.pop("last_update_s")
+            self.last_update_s.loc[agent.id] = 0
 
             for matrix in state.values():
                 matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
@@ -454,6 +458,8 @@ class ICBBANode(ICBAgent):
                     winning_bids_y: pd.DataFrame,
                     winning_agents_k: pd.DataFrame,
                     last_update_s: pd.DataFrame,
+                    *args,
+                    **kwargs
                     ):
 
         # -> Create set of agents with imposed allocations
@@ -472,12 +478,12 @@ class ICBBANode(ICBAgent):
             update_decision = self._update_decision(
                 k_agent_id=agent.id,
                 k_winning_agent_id=winning_agents_k.loc[task.id, "winning_agents_k"],
-                k_winning_bid_y_kj=winning_bids_y.loc[task.id, agent.id],
+                k_winning_bid_y_kj=winning_bids_y.loc[task.id, "winning_bids_y"],
                 k_timestamp_matrix=last_update_s,
 
                 i_agent_id=self.agent.id,
                 i_winning_agent_id=self.winning_agents_k.loc[task.id, "winning_agents_k"],
-                i_winning_bid_y_ij=self.winning_bids_y.loc[task.id],
+                i_winning_bid_y_ij=self.winning_bids_y.loc[task.id, "winning_bids_y"],
                 i_timestamp_matrix=self.last_update_s
             )
 
@@ -725,15 +731,15 @@ class ICBBANode(ICBAgent):
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
-            while len(self.agent.plan) < len(self.tasklog.pending_tasks):
+            while len(self.agent.plan) < len(self.tasklog.tasks_pending):
                 # -> Calculate bids
                 # > List tasks not in plan
-                remaining_tasks = [task for task in self.tasklog.pending_tasks if task.id not in self.agent.plan]
+                remaining_tasks = [task for task in self.tasklog.tasks_pending if task.id not in self.agent.plan]
 
                 # > For each task not in the plan ...
                 for task in remaining_tasks:
                     # -> Compute bids
-                    self._bid(task=task, agent=[self.agent])   # TODO: Review to better integrate intercession
+                    self._bid(task=task, agent_lst=[self.agent])   # TODO: Review to better integrate intercession
 
                 # -> Merge local bids c into shared bids b
                 # > For each task ...
@@ -833,6 +839,10 @@ class ICBBANode(ICBAgent):
                     # > Publish goal msg
                     self.publish_goal_msg(meta_action="update", traceback="Select task")
 
+                # -> If there are no valid tasks, break the while loop
+                else:
+                    break
+
     def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Find the largest marginal gain achieved from inserting a task into the plan at the most beneficial position
@@ -863,25 +873,35 @@ class ICBBANode(ICBAgent):
         )
 
         # > For each agent ...
-        for marginal_gains in agents_marginal_gains:
-            # -> Find the insertion with the highest marginal gain
-            insertion_loc, bid = max(marginal_gains.items(), key=lambda x: x[1]["value"])
+        for agent_bid_dict in agents_marginal_gains:
+            agent_id = agent_bid_dict["agent_id"]
+
+            max_marginal_gain = None
+            insertion_loc = None
+
+            for i, marginal_gain in agent_bid_dict["marginal_gains"].items():
+                if max_marginal_gain is None:
+                    max_marginal_gain = marginal_gain
+                elif marginal_gain["value"] > max_marginal_gain["value"]:
+                    max_marginal_gain = marginal_gain
+
+                insertion_loc = i
 
             # -> Store bid to local bids matrix
             # > Bid
-            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
+            self.local_bids_c.loc[task.id, agent_id] = max_marginal_gain["value"]
 
             # > Bid depth
-            self.bids_depth_e.loc[task.id, bid["agent_id"]] = bid["bids_depth"]
+            self.bids_depth_e.loc[task.id, agent_id] = max_marginal_gain["bids_depth"]
 
             # > Allocation
-            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+            self.local_allocations_d.loc[task.id, agent_id] = max_marginal_gain["allocation"]
 
             # -> Store insertion to agent local
-            if ["insertions"] not in self.fleet[bid["agent_id"]].local:
-                self.fleet[bid["agent_id"]].local['insertions'] = {}
+            if "insertions" not in self.fleet[agent_id].local.keys():
+                self.fleet[agent_id].local['insertions'] = {}
 
-            self.fleet[bid["agent_id"]].local['insertions'][task.id] = insertion_loc
+            self.fleet[agent_id].local['insertions'][task.id] = insertion_loc
 
         return agents_marginal_gains
 

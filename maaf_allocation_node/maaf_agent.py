@@ -64,6 +64,7 @@ try:
 
     from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
     from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 except ModuleNotFoundError:
     from rlb_simple_sim.rlb_simple_sim.Scenario import Scenario
@@ -85,6 +86,7 @@ except ModuleNotFoundError:
 
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 ##################################################################################################################
 
@@ -160,13 +162,16 @@ class MAAFAgent(Node):
 
         # TODO: Cleanup
         if self.id in self.scenario.fleet_bids_mechanisms.keys():
-            if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
-                self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
-                self.hierarchy_level = 0
+            # if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
+            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
+            #     self.hierarchy_level = 0
+            #
+            # elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
+            #     self.bid_evaluation_function = anticipated_action_task_interceding_agent
+            #     self.hierarchy_level = 1
 
-            elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
-                self.bid_evaluation_function = anticipated_action_task_interceding_agent
-                self.hierarchy_level = 1
+            self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
+            self.hierarchy_level = 0
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -190,6 +195,7 @@ class MAAFAgent(Node):
 
         # ---- Allocation states
         self.__setup_allocation_base_states()
+        # self._setup_allocation_additional_states()
 
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = None
@@ -462,10 +468,10 @@ class MAAFAgent(Node):
             columns=self.fleet.ids_active
         )
 
-    @abstractmethod
     def _setup_allocation_additional_states(self) -> None:
         """
         Setup additional method-dependent allocation states for the agents
+        Optional method to be implemented in child classes
         """
         pass
 
