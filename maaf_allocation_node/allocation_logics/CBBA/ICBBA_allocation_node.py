@@ -90,6 +90,10 @@ class ICBBANode(ICBAgent):
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
+        # self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=True))
+        self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=False))
+        self.add_on_pose_update_listener(self.check_publish_state_change)
+
         # ----------------------------------- Confirm initialisation
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
@@ -555,6 +559,10 @@ class ICBBANode(ICBAgent):
 
         :param reset_assignment: Flag to reset the current assignment
         """
+
+        # if reset_assignment and self.agent.plan.current_task_id is not None:
+        #     self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
+
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
@@ -701,8 +709,6 @@ class ICBBANode(ICBAgent):
             environment=self.env,
             logger=self.get_logger()
         )
-
-        self.get_logger().info(f"\nMarginal gains: {pformat(agents_marginal_gains)}")
 
         # > For each agent ...
         for agent_bid_dict in agents_marginal_gains:

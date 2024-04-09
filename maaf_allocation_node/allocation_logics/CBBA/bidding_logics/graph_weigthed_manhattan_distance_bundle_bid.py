@@ -219,7 +219,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
             # else:
             #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/((i+1)*1)
             #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/len(new_plan)
-            marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path) - 1)
+            marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path) + 1)
 
             # > Store the marginal gain
             marginal_gains[i] = {
