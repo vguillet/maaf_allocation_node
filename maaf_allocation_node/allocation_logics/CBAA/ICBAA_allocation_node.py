@@ -288,6 +288,7 @@ class ICBAANode(ICBAgent):
         :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
 
+        # ------------------------------------------------- Intercession
         tasks_ids = list(shared_bids_b.index)
         agent_ids = list(shared_bids_b.columns)
 

@@ -288,11 +288,11 @@ class ICBBANode(ICBAgent):
 
             # -> If self agent terminated task and task is current task id, only remove task
             if task.termination_source_id == self.id and task.id == self.agent.plan.current_task_id:
-                self._drop_task(task_id=task.id, forward=False)
+                self._drop_task(task_id=task.id, reset=True, forward=False)
 
             # -> Cancel goal if task is assigned to self
             elif task.id in self.agent.plan:
-                self._drop_task(task_id=task.id, forward=True)
+                self._drop_task(task_id=task.id, reset=True, forward=True)
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -340,6 +340,8 @@ class ICBBANode(ICBAgent):
     def update_shared_states(self,
                              agent: Agent,
 
+                             last_update_s: pd.DataFrame,
+
                              shared_bids_b: pd.DataFrame,
                              bids_depth_e: pd.DataFrame,
                              shared_bids_priority_beta: pd.DataFrame,
@@ -354,6 +356,8 @@ class ICBBANode(ICBAgent):
 
         :param agent: The agent that sent the message
 
+        :param last_update_s: Task last update matrix s received from the fleet
+
         :param shared_bids_b: Task bids matrix b received from the fleet
         :param bids_depth_e: Task bids depth matrix e received from the fleet
         :param shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
@@ -366,6 +370,11 @@ class ICBBANode(ICBAgent):
         if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
             self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
 
+        # # -> Merge received last update s into local last update s, keep the latest timestamps
+        # merged_df = self.last_update_s.combine_first(last_update_s)
+        # self.last_update_s["last_update_s"] = merged_df["last_update_s"].combine(last_update_s["last_update_s"], max)
+
+        # ------------------------------------------------- Intercession
         # -> Get task and agent ids
         tasks_ids = list(shared_bids_b.index)
         agent_ids = list(shared_bids_b.columns)
@@ -474,6 +483,7 @@ class ICBBANode(ICBAgent):
             # > Find agent with the highest priority
             winning_agent = self.shared_allocations_priority_alpha.loc[
                 task.id, agents_with_imposed_allocations].idxmax()
+                # TODO: Complete
 
         else:
             # -> Get update decision
@@ -489,7 +499,7 @@ class ICBBANode(ICBAgent):
                 i_timestamp_matrix=self.last_update_s
             )
 
-            self.get_logger().info(f"Update decision: {update_decision}")
+            # self.get_logger().info(f"Update decision: {update_decision}")
 
             # -> Apply update decision
             if update_decision == "update":
@@ -514,12 +524,29 @@ class ICBBANode(ICBAgent):
 
             # -> Drop task and all tasks following it if decision was update or reset
             if update_decision in ["update", "reset"]:
-                self._drop_task(
-                    task_id=task.id,
-                    reset=False,
-                    forward=True
-                )
-   
+                if self.agent.plan.has_task(task_id=task.id):
+                    starting_index = self.agent.plan.task_bundle.index(task.id)
+
+                    # > If tasks are present after the current task ...
+                    if starting_index < len(self.agent.plan.task_bundle) - 1:
+                        starting_index += 1
+
+                        # -> Update all tasks following the current task
+                        tasks_dropped = self.agent.plan.task_bundle[starting_index:]
+
+                        for task_id in tasks_dropped:
+                            # > Reset winning bids
+                            self.winning_agents_k.loc[task_id, "winning_agents_k"] = ""
+
+                            # > Reset winning agents
+                            self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
+
+                    self._drop_task(
+                        task_id=task.id,
+                        reset=False,
+                        forward=True
+                    )
+
     def update_allocation(self, reset_assignment: bool = False) -> None:
         """
         Select a task to bid for based on the current state
@@ -675,6 +702,8 @@ class ICBBANode(ICBAgent):
             logger=self.get_logger()
         )
 
+        self.get_logger().info(f"\nMarginal gains: {pformat(agents_marginal_gains)}")
+
         # > For each agent ...
         for agent_bid_dict in agents_marginal_gains:
             agent_id = agent_bid_dict["agent_id"]
@@ -685,10 +714,11 @@ class ICBBANode(ICBAgent):
             for i, marginal_gain in agent_bid_dict["marginal_gains"].items():
                 if max_marginal_gain is None:
                     max_marginal_gain = marginal_gain
+                    insertion_loc = i
+
                 elif marginal_gain["value"] > max_marginal_gain["value"]:
                     max_marginal_gain = marginal_gain
-
-                insertion_loc = i
+                    insertion_loc = i
 
             # -> Store bid to local bids matrix
             # > Bid
@@ -709,12 +739,12 @@ class ICBBANode(ICBAgent):
         return agents_marginal_gains
 
     def _drop_task(self,
-                  task_id: str,
-                  reset: bool = False,
-                  forward: bool = True,     # Must default to true to work with base priority merge method
-                  traceback: str = None,
-                  logger=True
-                  ) -> None:
+                   task_id: str,
+                   reset: bool = False,
+                   forward: bool = True,     # Must default to true to work with base priority merge method
+                   traceback: str = None,
+                   logger=True
+                   ) -> None:
         """
         Drop a task from the bundle list and plan
 
@@ -728,6 +758,20 @@ class ICBBANode(ICBAgent):
         if reset:
             # > Reset winning bids
             self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
+
+            # > Reset winning agents
+            self.winning_agents_k.loc[task_id, "winning_agents_k"] = ""
+
+        if reset and forward:
+            # -> Update all tasks following the current task
+            tasks_dropped = self.agent.plan.task_bundle[self.agent.plan.task_bundle.index(task_id):]
+
+            for task_id in tasks_dropped:
+                # > Reset winning bids
+                self.winning_agents_k.loc[task_id, "winning_agents_k"] = ""
+
+                # > Reset winning agents
+                self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
 
         # > Remove the task from the plan
         self.agent.remove_task_from_plan(

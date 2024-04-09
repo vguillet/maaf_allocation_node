@@ -8,38 +8,27 @@ from launch import LaunchContext
 def generate_launch_description():
     nodes = []
 
-    # context = LaunchContext()
-    #
-    #
-    # # -> Declare the launch configuration variable
-    # nodes.append(
-    #     DeclareLaunchArgument(
-    #         name="agent_count",
-    #         default_value="1",
-    #         description="Number of agents"
-    #     )
-    # )
-    #
-    # # > Get the value of agent_count from the launch file
-    # agent_count = LaunchConfiguration("agent_count")
-    #
-    # print("!!!!!!!!!!!!!!!", int(agent_count.perform(context)))
-    #
-    # # > Convert the launch configuration to an integer
-    # agent_count_int = int(agent_count.perform(context))
+    # > Declare scenario config launch argument
+    nodes.append(
+        DeclareLaunchArgument(
+            'scenario_id',
+            default_value='free_scenario',
+            description='The scenario configuration to use for the simulation'
+        )
+    )
 
-    # -> Add the nodes to the launch description
     for i in range(1):
-        nodes.append(
+         nodes.append(
             Node(
-                namespace=f"Turtle_{i + 1}",
+                namespace=f"Turtle_{i+1}",
                 package="maaf_allocation_node",
                 executable="maaf_allocation_node",
                 output="screen",
                 parameters=[
                     {
-                        "id": f"Turtle_{i + 1}",
-                        "name": f"Turtle_{i + 1}"
+                        "id": f"Turtle_{i+1}",
+                        "name": f"Turtle_{i+1}",
+                        "scenario_id": LaunchConfiguration("scenario_id"),
                     }
                 ]
             )

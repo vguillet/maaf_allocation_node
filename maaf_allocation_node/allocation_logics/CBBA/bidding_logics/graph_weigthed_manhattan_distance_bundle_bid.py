@@ -96,17 +96,23 @@ def graph_weighted_manhattan_distance_bundle_bid(
 
         # > Else, do not bid (return 0 for all insertion positions)
         else:
-            marginal_gains = {}
-            for i in range(len(agent.plan)):
-                marginal_gains[i] = {
-                    "value": 0,
-                    "allocation": 0,
-                    "bids_depth": 0
-                }
+            # marginal_gains = {}
+            # for i in range(len(agent.plan)):
+            #     marginal_gains[i] = {
+            #         "value": 0,
+            #         "allocation": 0,
+            #         "bids_depth": 0
+            #     }
 
             bids.append({
                 "agent_id": agent.id,
-                "marginal_gains": marginal_gains
+                "marginal_gains": {
+                    0: {
+                        "value": 0,
+                        "allocation": 0,
+                        "bids_depth": 0
+                    }
+                }
             })
 
     # -> Calculate the weighted Manhattan distance for all valid agents
@@ -179,7 +185,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 )
 
             # -> Calculate the marginal gain of the new plan
-            marginal_cost = consistent_random(
+            marginal_cost_noise = consistent_random(
                 string=agent.id + task.id,
                 min_value=0.0000000000001,
                 max_value=0.000000001
@@ -200,7 +206,20 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 selection="shortest"
             )
 
-            marginal_cost = 1/marginal_cost + 1/len(new_plan_path) - 1/len(plan_path)
+            # path_cost = 1/len(plan_path) if len(plan_path) > 0 else 0
+            # new_path_cost = 1/len(new_plan_path) if len(new_plan_path) > 0 else 0
+
+            # marginal_cost = marginal_cost_noise + (new_path_cost - path_cost)/len(new_plan)
+            #
+            # if len(plan_path) == 0:
+            #     marginal_cost = 1/marginal_cost_noise
+
+            # if len(new_plan_path)-len(plan_path) == 0:
+            #     marginal_cost = 1/marginal_cost_noise
+            # else:
+            #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/((i+1)*1)
+            #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/len(new_plan)
+            marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path) - 1)
 
             # > Store the marginal gain
             marginal_gains[i] = {
