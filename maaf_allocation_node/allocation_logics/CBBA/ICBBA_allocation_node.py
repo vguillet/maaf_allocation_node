@@ -91,8 +91,8 @@ class ICBBANode(ICBAgent):
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=True))
-        self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=False))
-        self.add_on_pose_update_listener(self.check_publish_state_change)
+        # self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=False))
+        # self.add_on_pose_update_listener(self.check_publish_state_change)
 
         # ----------------------------------- Confirm initialisation
         # -> Initial publish to announce the agent to the fleet and share initial state
@@ -370,10 +370,10 @@ class ICBBANode(ICBAgent):
         :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
 
-        # -> Update last update s of received agent to latest
-        if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
-            self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
-
+        # # -> Update last update s of received agent to latest # TODO: Move to send state update
+        # if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
+        #     self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
+        #
         # # -> Merge received last update s into local last update s, keep the latest timestamps
         # merged_df = self.last_update_s.combine_first(last_update_s)
         # self.last_update_s["last_update_s"] = merged_df["last_update_s"].combine(last_update_s["last_update_s"], max)
@@ -551,13 +551,23 @@ class ICBBANode(ICBAgent):
                         forward=True
                     )
 
-    def update_allocation(self, reset_assignment: bool = False) -> None:
+    def update_allocation(self,
+                          reset_assignment: bool = False,
+                          agent: Optional[Agent] = None,
+                          last_update_s: Optional[pd.DataFrame] = None,
+                          *args,
+                          **kwargs
+                          ) -> None:
         """
         Select a task to bid for based on the current state
         1. Merge local states with shared states and update local states if necessary
         2. If no task is assigned to self, select a task
+        -- If agent + last_update_s are provided
+        3. Update local s
 
         :param reset_assignment: Flag to reset the current assignment
+        :param agent: Agent object
+        :param last_update_s: Task last update matrix s received from the fleet
         """
 
         # if reset_assignment and self.agent.plan.current_task_id is not None:
@@ -567,6 +577,10 @@ class ICBBANode(ICBAgent):
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
             while len(self.agent.plan) < len(self.tasklog.tasks_pending):
+                # # -> Limit bundle sizes to 5
+                # if len(self.agent.plan) == 5:
+                #     break
+
                 # -> Calculate bids
                 # > List tasks not in plan
                 remaining_tasks = [task for task in self.tasklog.tasks_pending if task.id not in self.agent.plan]
@@ -660,6 +674,21 @@ class ICBBANode(ICBAgent):
                     # > Get valid task with largest bid (using local bids !!!)
                     selected_task_id = self.local_bids_c.loc[valid_tasks, self.id].idxmax()
 
+                    # -> Limit bundle sizes to 5
+                    # > If max bundle size reached and selected task not at agent location
+                    if len(self.agent.plan) >= 5 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
+                        break
+
+                    # if len(self.agent.plan) == 5 and self.shared_bids_b.loc[selected_task_id, self.id] < 1:
+                    #     break
+
+                    # # > List current plan tasks marginal gains
+                    # plan_tasks_marginal_gain = [self.shared_bids_b.loc[task_id, self.id] for task_id in self.agent.plan]
+                    #
+                    # # > If the selected task has a lower bid than the largest marginal gain in the plan, and the plan is full, break
+                    # if len(self.agent.plan) == 5 and self.shared_bids_b.loc[selected_task_id, self.id] < max(plan_tasks_marginal_gain):
+                    #     break
+
                     # -> Update winning bids
                     self.winning_bids_y.loc[selected_task_id, "winning_bids_y"] = self.shared_bids_b.loc[selected_task_id, self.id]
 
@@ -680,6 +709,16 @@ class ICBBANode(ICBAgent):
                 # -> If there are no valid tasks, break the while loop
                 else:
                     break
+
+        # ---- Update local states
+        if agent is not None and last_update_s is not None:
+            # -> Update last update s of received agent to latest
+            if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
+                self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
+
+            # -> Merge received last update s into local last update s, keep the latest timestamps
+            merged_df = self.last_update_s.combine_first(last_update_s)
+            self.last_update_s["last_update_s"] = merged_df["last_update_s"].combine(last_update_s["last_update_s"], max)
 
     def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """

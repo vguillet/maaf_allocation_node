@@ -211,7 +211,11 @@ class ICBAgent(MAAFAgent):
             )
 
         # ----- Update allocation
-        self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change) # TODO: Cleanup
+        self.update_allocation(
+            reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change,    # TODO: Cleanup
+            agent=received_agent,
+            **received_allocation_state
+        )
 
         # ----- Publish allocation state if state has changed
         # -> If state has changed, update local states (only publish when necessary)
@@ -240,12 +244,17 @@ class ICBAgent(MAAFAgent):
         raise NotImplementedError
 
     @abstractmethod
-    def update_allocation(self, reset_assignment: bool = False) -> None:
+    def update_allocation(self,
+                          reset_assignment: bool = False,
+                          agent: Agent = None,
+                          *args, **kwargs
+                          ) -> None:
         """
         Select a task to bid for based on the current state
         1. Merge local states with shared states and update local states if necessary
         2. If no task is assigned to self, select a task
 
         :param reset_assignment: Flag to reset the current assignment
+        :param agent: Agent object
         """
         raise NotImplementedError

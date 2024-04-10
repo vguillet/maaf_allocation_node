@@ -479,7 +479,11 @@ class ICBAANode(ICBAgent):
                 logger=True
             )
 
-    def update_allocation(self, reset_assignment: bool = False) -> None:
+    def update_allocation(self,
+                          reset_assignment: bool = False,
+                          *args,
+                          **kwargs
+                          ) -> None:
         """
         Select a task to bid for based on the current state
         1. Merge local states with shared states and update local states if necessary
