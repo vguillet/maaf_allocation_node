@@ -599,6 +599,7 @@ class ICBAANode(ICBAgent):
                 self.agent.add_task_to_plan(
                     tasklog=self.tasklog,
                     task=selected_task_id,
+                    bid=self.shared_bids_b.loc[selected_task_id, self.id],
                     logger=self.get_logger()
                 )
 
@@ -606,11 +607,11 @@ class ICBAANode(ICBAgent):
                 self.publish_goal_msg(meta_action="update", traceback="Select task")
 
     def _drop_task(self,
-                  task_id: str,
-                  reset: bool = False,
-                  traceback: str = None,
-                  logger=True
-                  ) -> None:
+                   task_id: str,
+                   reset: bool = False,
+                   traceback: str = None,
+                   logger=True
+                   ) -> None:
         """
         Drop a task from the bundle list and plan
 

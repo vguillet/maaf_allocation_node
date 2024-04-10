@@ -258,12 +258,19 @@ if __name__ == '__main__':
     total_passed = 0
     total_failed = 0
 
-    print("------------- Group 1: Agent k thinks k is the winner")
+    print(f"------------- Group 1: Agent k thinks k is the winner")
     """
     ----- Case 1: 
     - Agent i thinks i won the task
-    Expected: Update    
     """
+    print(f"Case 1:")
+    
+    """
+    1a:
+    - Agent k bid is higher
+    Expected: Update
+    """
+    
     decision = _update_decision(
         k_agent_id="k",
         k_winning_agent_id="k",
@@ -277,10 +284,35 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("[v] Case 1 passed")
+        print(f"  [v] Case 1a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 1 failed")
+        print(f"  [x] Case 1a failed: {decision}")
+        total_failed += 1
+
+    """
+    1b:
+    - Agent k bid is lower
+    Expected: Leave
+    """
+    
+    decision = _update_decision(
+        k_agent_id="k",
+        k_winning_agent_id="k",
+        k_winning_bid_y_kj=5,
+        k_timestamp_matrix=None,
+        i_agent_id="i",
+        i_winning_agent_id="i",
+        i_winning_bid_y_ij=10,
+        i_timestamp_matrix=None
+    )
+    
+    try:
+        assert decision == 'leave'
+        print(f"  [v] Case 1b passed: {decision}")
+        total_passed += 1
+    except AssertionError:
+        print(f"  [x] Case 1b failed: {decision}")
         total_failed += 1
 
     """
@@ -301,17 +333,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("[v] Case 2 passed")
+        print(f"[v] Case 2 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 2 failed")
+        print(f"[x] Case 2 failed: {decision}")
         total_failed += 1
     
     """
     ----- Case 3:
     - Agent i thinks m won the task
     """
-    print("Case 3:")
+    print(f"Case 3:")
 
     """
     3a:
@@ -334,10 +366,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 3a passed")
+        print(f"  [v] Case 3a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 3a failed")
+        print(f"  [x] Case 3a failed: {decision}")
         total_failed += 1
 
     """
@@ -361,10 +393,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 3b passed")
+        print(f"  [v] Case 3b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 3b failed")
+        print(f"  [x] Case 3b failed: {decision}")
         total_failed += 1
 
     """
@@ -388,10 +420,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 3c passed")
+        print(f"  [v] Case 3c passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 3c failed")
+        print(f"  [x] Case 3c failed: {decision}")
         total_failed += 1
 
     """
@@ -416,10 +448,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 3d passed")
+        print(f"  [v] Case 3d passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 3d failed")
+        print(f"  [x] Case 3d failed: {decision}")
         total_failed += 1
 
     """
@@ -440,13 +472,13 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("[v] Case 4 passed")
+        print(f"[v] Case 4 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 4 failed")
+        print(f"[x] Case 4 failed: {decision}")
         total_failed += 1
 
-    print("------------- Group 2: Agent k thinks i is the winner")
+    print(f"------------- Group 2: Agent k thinks i is the winner")
     """
     ----- Case 5:
     - Agent i thinks i won the task
@@ -465,10 +497,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("[v] Case 5 passed")
+        print(f"[v] Case 5 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 5 failed")
+        print(f"[x] Case 5 failed: {decision}")
         total_failed += 1
 
     """
@@ -489,17 +521,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'reset'
-        print("[v] Case 6 passed")
+        print(f"[v] Case 6 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 6 failed")
+        print(f"[x] Case 6 failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 7:
     - Agent i thinks m won the task
     """
-    print("Case 7:")
+    print(f"Case 7:")
 
     """
     7a:
@@ -522,10 +554,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'reset'
-        print("  [v] Case 7a passed")
+        print(f"  [v] Case 7a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 7a failed")
+        print(f"  [x] Case 7a failed: {decision}")
         total_failed += 1
 
     """
@@ -549,10 +581,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 7b passed")
+        print(f"  [v] Case 7b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 7b failed")
+        print(f"  [x] Case 7b failed: {decision}")
         total_failed += 1
 
     """
@@ -573,18 +605,18 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("[v] Case 8 passed")
+        print(f"[v] Case 8 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 8 failed")
+        print(f"[x] Case 8 failed: {decision}")
         total_failed += 1
 
-    print("------------- Group 3: Agent k thinks m is the winner")
+    print(f"------------- Group 3: Agent k thinks m is the winner")
     """
     ----- Case 9:
     - Agent i thinks they won the task
     """
-    print("Case 9: Agent i thinks i won the task")
+    print(f"Case 9: Agent i thinks i won the task")
 
     """
     9a:
@@ -607,10 +639,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 9a passed")
+        print(f"  [v] Case 9a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 9a failed")
+        print(f"  [x] Case 9a failed: {decision}")
         total_failed += 1
 
     """
@@ -634,10 +666,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 9b passed")
+        print(f"  [v] Case 9b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 9b failed")
+        print(f"  [x] Case 9b failed: {decision}")
         total_failed += 1
 
     """
@@ -661,10 +693,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 9c passed")
+        print(f"  [v] Case 9c passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 9c failed")
+        print(f"  [x] Case 9c failed: {decision}")
         total_failed += 1
 
     """
@@ -688,17 +720,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 9d passed")
+        print(f"  [v] Case 9d passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 9d failed")
+        print(f"  [x] Case 9d failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 10:
     - Agent i thinks k won the task
     """
-    print("Case 10: Agent i thinks k won the task")
+    print(f"Case 10: Agent i thinks k won the task")
 
     """
     10a:
@@ -721,10 +753,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 10a passed")
+        print(f"  [v] Case 10a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 10a failed")
+        print(f"  [x] Case 10a failed: {decision}")
         total_failed += 1
 
     """
@@ -748,17 +780,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'reset'
-        print("  [v] Case 10b passed")
+        print(f"  [v] Case 10b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 10b failed")
+        print(f"  [x] Case 10b failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 11:
     - Agent i thinks m won the task
     """
-    print("Case 11: Agent i thinks m won the task")
+    print(f"Case 11: Agent i thinks m won the task")
 
     """
     11a:
@@ -781,10 +813,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 11a passed")
+        print(f"  [v] Case 11a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 11a failed")
+        print(f"  [x] Case 11a failed: {decision}")
         total_failed += 1
 
     """
@@ -808,17 +840,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 11b passed")
+        print(f"  [v] Case 11b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 11b failed")
+        print(f"  [x] Case 11b failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 12:
     - Agent i thinks n won the task
     """
-    print("Case 12: Agent i thinks n won the task")
+    print(f"Case 12: Agent i thinks n won the task")
 
     """
     12a:
@@ -841,10 +873,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 12a passed")
+        print(f"  [v] Case 12a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 12a failed")
+        print(f"  [x] Case 12a failed: {decision}")
         total_failed += 1
 
     """
@@ -868,10 +900,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 12b passed")
+        print(f"  [v] Case 12b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 12b failed")
+        print(f"  [x] Case 12b failed: {decision}")
         total_failed += 1
 
     """
@@ -895,10 +927,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'reset'
-        print("  [v] Case 12c passed")
+        print(f"  [v] Case 12c passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 12c failed")
+        print(f"  [x] Case 12c failed: {decision}")
         total_failed += 1
 
     """
@@ -922,17 +954,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 12d passed")
+        print(f"  [v] Case 12d passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 12d failed")
+        print(f"  [x] Case 12d failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 13:
     - Agent i thinks the task is unassigned
     """
-    print("Case 13: Agent i thinks the task is unassigned")
+    print(f"Case 13: Agent i thinks the task is unassigned")
 
     """
     13a:
@@ -955,10 +987,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 13a passed")
+        print(f"  [v] Case 13a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 13a failed")
+        print(f"  [x] Case 13a failed: {decision}")
         total_failed += 1
 
     """
@@ -983,13 +1015,13 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 13b passed")
+        print(f"  [v] Case 13b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 13b failed")
+        print(f"  [x] Case 13b failed: {decision}")
         total_failed += 1
 
-    print("------------- Group 4: Agent k thinks the task is unassigned")
+    print(f"------------- Group 4: Agent k thinks the task is unassigned")
     """
     ----- Case 14:
     - Agent i thinks i won the task
@@ -1008,10 +1040,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("[v] Case 14 passed")
+        print(f"[v] Case 14 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 14 failed")
+        print(f"[x] Case 14 failed: {decision}")
         total_failed += 1
 
     """
@@ -1032,17 +1064,17 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("[v] Case 15 passed")
+        print(f"[v] Case 15 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 15 failed")
+        print(f"[x] Case 15 failed: {decision}")
         total_failed += 1
 
     """
     ----- Case 16:
     - Agent i thinks m won the task
     """
-    print("Case 16: Agent i thinks m won the task")
+    print(f"Case 16: Agent i thinks m won the task")
 
     """
     16a:
@@ -1065,10 +1097,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'update'
-        print("  [v] Case 16a passed")
+        print(f"  [v] Case 16a passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 16a failed")
+        print(f"  [x] Case 16a failed: {decision}")
         total_failed += 1
 
     """
@@ -1092,10 +1124,10 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("  [v] Case 16b passed")
+        print(f"  [v] Case 16b passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("  [x] Case 16b failed")
+        print(f"  [x] Case 16b failed: {decision}")
         total_failed += 1
 
     """
@@ -1117,12 +1149,12 @@ if __name__ == '__main__':
 
     try:
         assert decision == 'leave'
-        print("[v] Case 17 passed")
+        print(f"[v] Case 17 passed: {decision}")
         total_passed += 1
     except AssertionError:
-        print("[x] Case 17 failed")
+        print(f"[x] Case 17 failed: {decision}")
         total_failed += 1
 
-    print("=================================")
+    print(f"=================================")
     print(f"Total passed: {total_passed}/{total_passed + total_failed}")
     print(f"Total failed: {total_failed}/{total_passed + total_failed}")

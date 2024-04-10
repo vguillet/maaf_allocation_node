@@ -172,6 +172,13 @@ class ICBBANode(ICBAgent):
             "bids_depth_e": self.bids_depth_e
         }
 
+    @property
+    def allocation_state_hash_exclusion(self) -> List[str]:
+        """
+        List of allocation states to exclude from the state hash
+        """
+        return ["last_update_s"]
+
     # ============================================================== METHODS
     # ---------------- Processes
     def update_situation_awareness(self,
@@ -292,11 +299,11 @@ class ICBBANode(ICBAgent):
 
             # -> If self agent terminated task and task is current task id, only remove task
             if task.termination_source_id == self.id and task.id == self.agent.plan.current_task_id:
-                self._drop_task(task_id=task.id, reset=True, forward=False)
+                self._drop_task(task_id=task.id, reset=True, forward=False, motive="termination")
 
             # -> Cancel goal if task is assigned to self
             elif task.id in self.agent.plan:
-                self._drop_task(task_id=task.id, reset=True, forward=True)
+                self._drop_task(task_id=task.id, reset=True, forward=True, motive="termination")
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -369,14 +376,6 @@ class ICBBANode(ICBAgent):
         :param shared_allocations_a: Task allocations matrix a received from the fleet
         :param shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
         """
-
-        # # -> Update last update s of received agent to latest # TODO: Move to send state update
-        # if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
-        #     self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
-        #
-        # # -> Merge received last update s into local last update s, keep the latest timestamps
-        # merged_df = self.last_update_s.combine_first(last_update_s)
-        # self.last_update_s["last_update_s"] = merged_df["last_update_s"].combine(last_update_s["last_update_s"], max)
 
         # ------------------------------------------------- Intercession
         # -> Get task and agent ids
@@ -548,7 +547,8 @@ class ICBBANode(ICBAgent):
                     self._drop_task(
                         task_id=task.id,
                         reset=False,
-                        forward=True
+                        forward=True,
+                        motive=update_decision,
                     )
 
     def update_allocation(self,
@@ -676,18 +676,11 @@ class ICBBANode(ICBAgent):
 
                     # -> Limit bundle sizes to 5
                     # > If max bundle size reached and selected task not at agent location
-                    if len(self.agent.plan) >= 5 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
+                    if len(self.agent.plan) >= 1 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
+                        # -> Break while loop
                         break
 
-                    # if len(self.agent.plan) == 5 and self.shared_bids_b.loc[selected_task_id, self.id] < 1:
-                    #     break
-
-                    # # > List current plan tasks marginal gains
-                    # plan_tasks_marginal_gain = [self.shared_bids_b.loc[task_id, self.id] for task_id in self.agent.plan]
-                    #
-                    # # > If the selected task has a lower bid than the largest marginal gain in the plan, and the plan is full, break
-                    # if len(self.agent.plan) == 5 and self.shared_bids_b.loc[selected_task_id, self.id] < max(plan_tasks_marginal_gain):
-                    #     break
+                    # self.get_logger().warning(f"Task {selected_task_id}: bid {self.local_bids_c.loc[selected_task_id, self.id]}")
 
                     # -> Update winning bids
                     self.winning_bids_y.loc[selected_task_id, "winning_bids_y"] = self.shared_bids_b.loc[selected_task_id, self.id]
@@ -700,6 +693,7 @@ class ICBBANode(ICBAgent):
                         tasklog=self.tasklog,
                         task=selected_task_id,
                         position=self.agent.local["insertions"][selected_task_id],
+                        bid=self.local_bids_c.loc[selected_task_id, self.id],
                         logger=self.get_logger()
                     )
 
@@ -712,13 +706,13 @@ class ICBBANode(ICBAgent):
 
         # ---- Update local states
         if agent is not None and last_update_s is not None:
-            # -> Update last update s of received agent to latest
-            if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
-                self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
-
             # -> Merge received last update s into local last update s, keep the latest timestamps
             merged_df = self.last_update_s.combine_first(last_update_s)
             self.last_update_s["last_update_s"] = merged_df["last_update_s"].combine(last_update_s["last_update_s"], max)
+
+            # -> Update last update s of received agent to latest
+            if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
+                self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
 
     def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
@@ -788,7 +782,7 @@ class ICBBANode(ICBAgent):
                    reset: bool = False,
                    forward: bool = True,     # Must default to true to work with base priority merge method
                    traceback: str = None,
-                   logger=True
+                   motive: Optional[str] = None,
                    ) -> None:
         """
         Drop a task from the bundle list and plan
@@ -797,7 +791,6 @@ class ICBBANode(ICBAgent):
         :param reset: Flag to reset the winning bids y for the task
         :param forward: Whether to drop the task and all following tasks in the plan
         :param traceback: The reason for dropping the task
-        :param logger: Whether to log the task drop
         """
 
         if reset:
@@ -823,7 +816,8 @@ class ICBBANode(ICBAgent):
             tasklog=self.tasklog,
             task=task_id,
             forward=forward,
-            logger=self.get_logger() if logger else None
+            motive=motive,
+            logger=self.get_logger()
         )
 
         # > Publish goal msg

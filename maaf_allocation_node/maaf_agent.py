@@ -557,7 +557,15 @@ class MAAFAgent(Node):
     # ---------------- Self state
     # >>>> State change tracking
     @property
-    def allocation_state_hash_dict(self) -> dict:
+    def allocation_state_hash_exclusion(self) -> List[str]:
+        """
+        Optional
+        List of allocation states to exclude from the state hash
+        """
+        return []
+
+    @property
+    def allocation_state_hash_dict(self) -> str:
         """
         Hash of the agent allocation state
 
@@ -574,6 +582,12 @@ class MAAFAgent(Node):
             serialised=True
             )
 
+        # -> Remove all keys in exclusion list
+        for key in self.allocation_state_hash_exclusion:
+            if key in state.keys():
+                del state[key]
+
+        # -> Hash all values
         for key, value in state.items():
             if isinstance(value, pd.Series):
                 immutable_state[key] = hash(str(value.to_string()))
@@ -582,7 +596,7 @@ class MAAFAgent(Node):
             else:
                 immutable_state[key] = hash(str(value))
 
-        return immutable_state
+        return dumps(immutable_state)
 
     @property
     def allocation_state_change(self) -> bool:
@@ -591,14 +605,19 @@ class MAAFAgent(Node):
 
         :return: bool
         """
-        # -> Compare hash of current state with hash of previous state
-        for key, value in self.allocation_state_hash_dict.items():
-            # -> If any value has changed, return True
-            if value != self.prev_allocation_state_hash_dict[key]:
-                return True
+        # # -> Compare hash of current state with hash of previous state
+        # for key, value in self.allocation_state_hash_dict.items():
+        #     # -> If any value has changed, return True
+        #     if value != self.prev_allocation_state_hash_dict[key]:
+        #         return True
+        #
+        # # -> If no value has changed, return False
+        # return False
 
-        # -> If no value has changed, return False
-        return False
+        if self.allocation_state_hash_dict != self.prev_allocation_state_hash_dict:
+            return True
+        else:
+            return False
 
     def check_publish_state_change(self):
         # -> If state has changed, update local states (only publish when necessary)
@@ -608,6 +627,11 @@ class MAAFAgent(Node):
 
             # -> Publish allocation state to the fleet
             self.publish_allocation_state_msg()
+
+            # self.get_logger().info(f"         < {self.id} Published allocation state update")
+        else:
+            return
+            # self.get_logger().info(f"         < {self.id} No allocation state change")
 
     # >>>> Base states grouped getter
     def get_state(self,

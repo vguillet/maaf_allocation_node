@@ -82,6 +82,20 @@ class ICBAgent(MAAFAgent):
             bid_estimator=bid_estimator
         )
 
+        # ---------- epoch
+        self.sim_epoch_sub = self.create_subscription(
+            msg_type=TeamCommStamped,
+            topic=topic_epoch,
+            callback=self.sim_epoch_callback,
+            qos_profile=qos_sim_epoch
+        )
+
+    def sim_epoch_callback(self, msg: TeamCommStamped):
+        sim_state = loads(msg.memo)
+
+        if self.id == "Turtle_1":
+            self.get_logger().warning(f"------------------- Epoch: {sim_state['epoch']}")
+
     # ============================================================== PROPERTIES
 
     # ============================================================== METHODS
@@ -110,7 +124,7 @@ class ICBAgent(MAAFAgent):
         task = Task.from_dict(task_dict, partial=True)
 
         if task_msg.meta_action == "pending":
-            self.get_logger().info(f"{self.id} * Found new task: {task.id} (Type: {task.type}) - Pending task count: {len(self.tasklog.ids_pending) + 1}")
+            self.get_logger().info(f"{self.id} * Task {task.id} found (Type: {task.type}) - Pending task count: {len(self.tasklog.ids_pending) + 1}")
 
         elif task_msg.meta_action == "completed":
             self.get_logger().info(f"{self.id} v Task {task.id} completed - Pending task count: {len(self.tasklog.ids_pending) - 1}")
