@@ -23,34 +23,38 @@ from maaf_tools.tools import *
 
 
 def anticipated_action_task_interceding_agent(
-        # Tasks
+        # > Self parameters
+        self_agent: Agent,
         task: Task,
-        tasklog: TaskLog,
-
-        # Agents
         agent_lst: list[Agent],
-        fleet: Fleet,
-
-        environment,
+        intercession_targets: list[str],
         logger,
+
+        # > States
+        environment,
+        fleet: Fleet,
+        tasklog: TaskLog,
+        shared_bids_b,
 
         *args,
         **kwargs
-    ) -> list[dict]:
+        ) -> list[dict]:
     """
     Calculate the bid for the provided agent as the inverse of the weighted Manhattan distance between the agent and the task.
     Magnify the bid for the task if the agent has the skillset for the task
 
+    # ----- Self parameters
+    :param self_agent: The agent for which to calculate the bid.
     :param task: The task to calculate the bid for.
+    :param agent_lst: The list of agents to consider for the bid.
+    :param intercession_targets: The list of tasks that the agent can intercede for.
+    :param logger: The logger to log the bid.
+
+    # ----- States
+    :param environment: The environment in which the agents are operating.
+    :param fleet: The fleet of agents.
     :param tasklog: The task log to store the path for the current bid.
-
-    :param agent_lst: The list of agents to calculate the bid from.
-    :param fleet: The fleet of agents to calculate the bid from.
-
-    :param environment: The environment graph to calculate the distances in if necessary.
-    :param logger: The logger to log messages to.
-
-    :return: A list of dictionaries containing the agent(s) ID(s) and corresponding bid.
+    :param shared_bids_b: The shared bids for the agents.
     """
 
     bids = []
@@ -58,18 +62,21 @@ def anticipated_action_task_interceding_agent(
     # -> Compute base bid for self
     bids.append(
         graph_weighted_manhattan_distance_bid(
+            # > Self parameters
+            self_agent=self_agent,
             task=task,
-            tasklog=tasklog,
-
-            agent_lst=[kwargs["self_agent"]],
-            fleet=fleet,
-
-            environment=environment,
+            agent_lst=[self_agent],
+            intercession_targets=intercession_targets,
             logger=logger,
 
-            shared_bids_b=kwargs["shared_bids_b"],                  # TODO: Cleanup
-            self_agent=kwargs["self_agent"],                        # TODO: Cleanup
-            intercession_targets=kwargs["intercession_targets"]     # TODO: Cleanup
+            # > States
+            environment=environment,
+            fleet=fleet,
+            tasklog=tasklog,
+            shared_bids_b=shared_bids_b,  # TODO: Cleanup
+
+            *args,
+            **kwargs
         )[0]
     )
 
@@ -89,7 +96,7 @@ def anticipated_action_task_interceding_agent(
     valid_agents = []
 
     # if task.type in kwargs["intercession_targets"]:
-    if task.instructions["ACTION_AT_LOC"] in kwargs["intercession_targets"]:
+    if task.instructions["ACTION_AT_LOC"] in intercession_targets:
 
         for agent in agent_lst:
             # -> If the goto leads to a task ACTION_1 and the agent has the ACTION_1 skillset and the agent is in the intercession_targets list

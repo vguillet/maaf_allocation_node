@@ -177,7 +177,7 @@ class MAAFAgent(Node):
         self.rebroadcast_received_msgs = False
 
         # ---- Environment
-        self.env = None
+        self.environment = None
 
         # ---- Fleet and task log
         self.__setup_fleet_and_tasklog()
@@ -496,12 +496,12 @@ class MAAFAgent(Node):
         """
         self.__env_update_listeners.append(listener)
 
-    def call_on_env_update_listeners(self, env) -> None:
+    def call_on_env_update_listeners(self, environment) -> None:
         """
         Call all environment update listeners
         """
         for listener in self.__env_update_listeners:
-            listener(env)
+            listener(environment)
 
     # ---------------- Pose update
     def add_on_pose_update_listener(self, listener) -> None:
@@ -575,7 +575,7 @@ class MAAFAgent(Node):
         immutable_state = {}
 
         state = self.get_state(
-            env=False,
+            environment=False,
             state_awareness=False,
             local_allocation_state=True,
             shared_allocation_state=True,
@@ -635,7 +635,7 @@ class MAAFAgent(Node):
 
     # >>>> Base states grouped getter
     def get_state(self,
-                  env: bool = False,
+                  environment: bool = False,
                   state_awareness: bool = False,
                   local_allocation_state: bool = False,
                   shared_allocation_state: bool = False,
@@ -654,14 +654,14 @@ class MAAFAgent(Node):
 
         state = {}
 
-        if env:
+        if environment:
             if not serialised:
-                state["env"] = self.env
+                state["environment"] = self.environment
             else:
                 try:
-                    state["env"] = graph_to_json(graph=self.env["graph"], pos=self.env["pos"])
+                    state["environment"] = graph_to_json(graph=self.environment["graph"], pos=self.environment["pos"])
                 except:
-                    state["env"] = None
+                    state["environment"] = None
 
         # !!!!! All states in state awareness must be maaf_list_dataclasses !!!!!
         if state_awareness:
@@ -766,16 +766,16 @@ class MAAFAgent(Node):
             sys.exit()
 
     def __env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
-        if self.env is None:    # TODO: Review env management logic
+        if self.environment is None:    # TODO: Review environment management logic
 
-            self.env = json_to_graph(graph_json=msg.memo)
+            self.environment = json_to_graph(graph_json=msg.memo)
 
-            self.env["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.env["graph"]))
+            self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
 
             self.get_logger().info(f"         < Received environment update")
 
             # # -> Display the graph
-            # nx.draw(self.env["graph"], pos=self.env["pos"])
+            # nx.draw(self.environment["graph"], pos=self.environment["pos"])
             # plt.show()
 
             # -> Recompute local bids for all tasks
@@ -790,8 +790,8 @@ class MAAFAgent(Node):
                     # > Allocation
                     self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
-        # -> Call env update listeners
-        self.call_on_env_update_listeners(env=self.env)
+        # -> Call environment update listeners
+        self.call_on_env_update_listeners(environment=self.environment)
 
     def __pose_subscriber_callback(self, pose_msg) -> None:
         """
@@ -1010,7 +1010,7 @@ class MAAFAgent(Node):
         msg.meta_action = "allocation update"
         msg.memo = dumps(
             self.get_state(
-                env=False,
+                environment=False,
                 state_awareness=True,
                 local_allocation_state=False,
                 shared_allocation_state=True,
@@ -1153,7 +1153,7 @@ class MAAFAgent(Node):
         deserialised_state = loads(state)
 
         states = self.get_state(
-            env=False,
+            environment=False,
             state_awareness=False,
             local_allocation_state=True,
             shared_allocation_state=True,
@@ -1206,8 +1206,8 @@ class MAAFAgent(Node):
 
         if compute_path:
             # -> Find the Manhattan distance between the agent and the task
-            path = self.env["all_pairs_shortest_paths"][source_pos][target_pos]
-            # path = nx.shortest_path(self.env["graph"], source_pos, target_pos)
+            path = self.environment["all_pairs_shortest_paths"][source_pos][target_pos]
+            # path = nx.shortest_path(self.environment["graph"], source_pos, target_pos)
             # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
 
         # > Store path to agent task log

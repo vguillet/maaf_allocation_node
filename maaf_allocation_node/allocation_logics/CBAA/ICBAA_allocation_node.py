@@ -396,7 +396,7 @@ class ICBAANode(ICBAgent):
         :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
         """
 
-        if self.env is None:
+        if self.environment is None:
             # -> Return 0 bids for all agents as the environment is not available
             self.get_logger().warning("!!!!!! WARNING: Environment not available")
             return []
@@ -407,18 +407,25 @@ class ICBAANode(ICBAgent):
 
         # -> Compute bids
         task_bids = self.bid_evaluation_function(
+            # > Self parameters
+            self_agent=self.agent,
             task=task,
-            tasklog=self.tasklog,
-
             agent_lst=agent_lst,
-            fleet=self.fleet,
-
-            environment=self.env,
+            intercession_targets=self.scenario.intercession_targets,
             logger=self.get_logger(),
 
-            shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
-            self_agent=self.agent,                                      # TODO: Cleanup
-            intercession_targets=self.scenario.intercession_targets     # TODO: Cleanup
+            # > States
+            **self.get_state(
+                environment=True,
+                state_awareness=True,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
+            # tasklog=self.tasklog,
+            # fleet=self.fleet,
+            # environment=self.environment,
+            # shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
         )
 
         # -> Store bids to local bids matrix

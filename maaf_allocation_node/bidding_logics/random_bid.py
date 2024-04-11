@@ -9,7 +9,7 @@ from maaf_tools.datastructures.agent.Fleet import Fleet
 from maaf_tools.datastructures.agent.AgentState import AgentState
 
 
-def random_bid(task: Task, agent_lst: list[Agent], env=None) -> list[dict]:
+def random_bid(task: Task, agent_lst: list[Agent], environment=None) -> list[dict]:
     bids = []
 
     for agent in agent_lst:

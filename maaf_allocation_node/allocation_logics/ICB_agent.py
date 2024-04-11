@@ -240,7 +240,12 @@ class ICBAgent(MAAFAgent):
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # ---------------- Processes
-    def update_shared_states(self, *args, **kwargs):
+    @abstractmethod
+    def update_shared_states(self,
+                             agent: Agent,
+                             *args,
+                             **kwargs
+                             ):
         """
         Update local states with received states from the fleet
 
@@ -249,7 +254,12 @@ class ICBAgent(MAAFAgent):
         raise NotImplementedError
 
     @abstractmethod
-    def update_task(self, *args, **kwargs) -> None:
+    def update_task(self,
+                    task: Task,
+                    agent: Agent,
+                    *args,
+                    **kwargs
+                    ) -> None:
         """
         Update current task based on received winning bids and updated allocation intercession from the fleet
 

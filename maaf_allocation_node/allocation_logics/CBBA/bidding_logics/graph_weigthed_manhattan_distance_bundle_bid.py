@@ -37,32 +37,32 @@ DEEP = 1
 
 
 def graph_weighted_manhattan_distance_bundle_bid(
-        # > Base parameters
+        # > Self parameters
         task: Task,
-        tasklog: TaskLog,
-
-        # Agents
         agent_lst: list[Agent],
-        fleet: Fleet,
-
-        environment,
         logger,
+
+        # > States
+        environment,
+        fleet: Fleet,
+        tasklog: TaskLog,
 
         *args,
         **kwargs
-    ) -> list[dict]:
+        ) -> list[dict]:
     """
     For the provided agent and task, calculate the marginal gain achieved from inserting a task into the plan
      at the different positions
 
+    # ----- Self parameters
     :param task: The task to calculate the marginal gains for.
-    :param tasklog: The task log to store the path for the current bid.
-
     :param agent_lst: The list of agents to calculate the bid from.
-    :param fleet: The fleet of agents to calculate the bid from.
-
-    :param environment: The environment graph to calculate the distances in if necessary.
     :param logger: The logger to log messages to.
+
+    # ----- States
+    :param environment: The environment graph to calculate the distances in if necessary.
+    :param fleet: The fleet of agents to calculate the bid from.
+    :param tasklog: The task log to store the path for the current bid.
 
     :return: A list of dictionaries containing the agent(s) ID(s) and corresponding marginal gains per insertion position.
     

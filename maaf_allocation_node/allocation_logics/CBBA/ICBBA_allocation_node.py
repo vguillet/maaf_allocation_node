@@ -676,7 +676,7 @@ class ICBBANode(ICBAgent):
 
                     # -> Limit bundle sizes to 5
                     # > If max bundle size reached and selected task not at agent location
-                    if len(self.agent.plan) >= 1 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
+                    if len(self.agent.plan) >= 5 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
                         # -> Break while loop
                         break
 
@@ -724,7 +724,7 @@ class ICBBANode(ICBAgent):
         :return: List of dictionaries containing the agent(s) ID(s) and corresponding marginal gains according to insertion position
         """
 
-        if self.env is None:
+        if self.environment is None:
             # -> Return 0 bids for all agents as the environment is not available
             self.get_logger().warning("!!!!!! WARNING: Environment not available")
             return []
@@ -735,12 +735,24 @@ class ICBBANode(ICBAgent):
 
         # -> Compute the marginal gains for the agent
         agents_marginal_gains = self.bid_evaluation_function(
+            # > Self parameters
+            self_agent=self.agent,
             task=task,
-            tasklog=self.tasklog,
             agent_lst=agent_lst,
-            fleet=self.fleet,
-            environment=self.env,
-            logger=self.get_logger()
+            intercession_targets=self.scenario.intercession_targets,
+            logger=self.get_logger(),
+
+            # > States
+            **self.get_state(
+                environment=True,
+                state_awareness=True,
+                local_allocation_state=True,
+                shared_allocation_state=True,
+                serialised=False
+            )
+            # tasklog=self.tasklog,
+            # fleet=self.fleet,
+            # environment=self.environment,
         )
 
         # > For each agent ...
