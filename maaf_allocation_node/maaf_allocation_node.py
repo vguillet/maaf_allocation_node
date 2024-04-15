@@ -25,8 +25,8 @@ from .allocation_logics.CBBA.ICBBA_allocation_node import ICBBANode
 
 class maaf_allocation_node:
     def __init__(self):
-        # self.allocation_node = ICBAANode()
-        self.allocation_node = ICBBANode()
+        self.allocation_node = ICBAANode()
+        # self.allocation_node = ICBBANode()
 
 
 def main(args=None):

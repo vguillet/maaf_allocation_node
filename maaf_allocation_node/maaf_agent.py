@@ -25,6 +25,7 @@ from typing import List, Optional, Tuple
 from json import dumps, loads
 import warnings
 from copy import deepcopy
+from pprint import pprint, pformat
 
 # Libs
 import numpy as np
@@ -162,16 +163,16 @@ class MAAFAgent(Node):
 
         # TODO: Cleanup
         if self.id in self.scenario.fleet_bids_mechanisms.keys():
-            # if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
-            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
-            #     self.hierarchy_level = 0
-            #
-            # elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
-            #     self.bid_evaluation_function = anticipated_action_task_interceding_agent
-            #     self.hierarchy_level = 1
+            if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
+                self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
+                self.hierarchy_level = 0
 
-            self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-            self.hierarchy_level = 0
+            elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
+                self.bid_evaluation_function = anticipated_action_task_interceding_agent
+                self.hierarchy_level = 1
+
+            # self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
+            # self.hierarchy_level = 0
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -384,6 +385,9 @@ class MAAFAgent(Node):
         )
 
         self.local_bids_c = self.local_bids_c.astype(float)
+
+        # > Include in self agent shared state
+        self.agent.shared["local_bids_c"] = self.local_bids_c
 
         """
         Local allocations matrix d of size N_t x N_u:
@@ -1008,6 +1012,7 @@ class MAAFAgent(Node):
         msg.target = "all"
 
         msg.meta_action = "allocation update"
+
         msg.memo = dumps(
             self.get_state(
                 environment=False,

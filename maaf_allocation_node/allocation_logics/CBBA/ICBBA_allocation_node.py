@@ -772,20 +772,21 @@ class ICBBANode(ICBAgent):
                     insertion_loc = i
 
             # -> Store bid to local bids matrix
-            # > Bid
-            self.local_bids_c.loc[task.id, agent_id] = max_marginal_gain["value"]
+            if max_marginal_gain is not None:
+                # > Bid
+                self.local_bids_c.loc[task.id, agent_id] = max_marginal_gain["value"]
 
-            # > Bid depth
-            self.bids_depth_e.loc[task.id, agent_id] = max_marginal_gain["bids_depth"]
+                # > Bid depth
+                self.bids_depth_e.loc[task.id, agent_id] = max_marginal_gain["bids_depth"]
 
-            # > Allocation
-            self.local_allocations_d.loc[task.id, agent_id] = max_marginal_gain["allocation"]
+                # > Allocation
+                self.local_allocations_d.loc[task.id, agent_id] = max_marginal_gain["allocation"]
 
-            # -> Store insertion to agent local
-            if "insertions" not in self.fleet[agent_id].local.keys():
-                self.fleet[agent_id].local['insertions'] = {}
+                # -> Store insertion to agent local
+                if "insertions" not in self.fleet[agent_id].local.keys():
+                    self.fleet[agent_id].local['insertions'] = {}
 
-            self.fleet[agent_id].local['insertions'][task.id] = insertion_loc
+                self.fleet[agent_id].local['insertions'][task.id] = insertion_loc
 
         return agents_marginal_gains
 

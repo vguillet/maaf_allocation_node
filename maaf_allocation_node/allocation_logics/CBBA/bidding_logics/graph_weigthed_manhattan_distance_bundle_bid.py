@@ -18,6 +18,7 @@ try:
     from maaf_tools.datastructures.agent.Fleet import Fleet
     from maaf_tools.datastructures.agent.AgentState import AgentState
 
+    from maaf_allocation_node.bidding_logics.tools import *
     from maaf_tools.tools import *
 
 except ModuleNotFoundError:
@@ -28,6 +29,7 @@ except ModuleNotFoundError:
     from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
     from maaf_tools.maaf_tools.datastructures.agent.AgentState import AgentState
 
+    from maaf_allocation_node.maaf_allocation_node.bidding_logics.tools import *
     from maaf_tools.maaf_tools.tools import *
 
 ##################################################################################################################
@@ -81,41 +83,14 @@ def graph_weighted_manhattan_distance_bundle_bid(
         }, 
         ...
         }]
-    
     """
 
-    bids = []
-
     # -> Check the agents skillset against the task instructions
-    valid_agents = []
-
-    for agent in agent_lst:
-        # > If agent has skills for the task, add to valid agents
-        if agent.has_skill(task.type):
-            valid_agents.append(agent)
-
-        # > Else, do not bid (return 0 for all insertion positions)
-        else:
-            # marginal_gains = {}
-            # for i in range(len(agent.plan)):
-            #     marginal_gains[i] = {
-            #         "value": 0,
-            #         "allocation": 0,
-            #         "bids_depth": 0
-            #     }
-
-            bids.append({
-                "agent_id": agent.id,
-                "marginal_gains": {
-                    0: {
-                        "value": 0,
-                        "allocation": 0,
-                        "bids_depth": 0
-                    }
-                }
-            })
+    valid_agents = get_valid_agent_list(task=task, agent_lst=agent_lst)
 
     # -> Calculate the weighted Manhattan distance for all valid agents
+    bids = []
+
     for agent in valid_agents:
         # -> Agent node
         agent_node = (agent.state.x, agent.state.y)
