@@ -160,7 +160,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 )
 
             # -> Calculate the marginal gain of the new plan
-            marginal_cost_noise = consistent_random(
+            marginal_gain_noise = consistent_random(
                 string=agent.id + task.id,
                 min_value=0.0000000000001,
                 max_value=0.000000001
@@ -181,29 +181,40 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 selection="shortest"
             )
 
-            # path_cost = 1/len(plan_path) if len(plan_path) > 0 else 0
-            # new_path_cost = 1/len(new_plan_path) if len(new_plan_path) > 0 else 0
+            # path_gain = 1/len(plan_path) if len(plan_path) > 0 else 0
+            # new_path_gain = 1/len(new_plan_path) if len(new_plan_path) > 0 else 0
 
-            # marginal_cost = marginal_cost_noise + (new_path_cost - path_cost)/len(new_plan)
+            # marginal_gain = marginal_gain_noise + (new_path_gain - path_gain)/len(new_plan)
             #
             # if len(plan_path) == 0:
-            #     marginal_cost = 1/marginal_cost_noise
+            #     marginal_gain = 1/marginal_gain_noise
 
             # if len(new_plan_path)-len(plan_path) == 0:
-            #     marginal_cost = 1/marginal_cost_noise
+            #     marginal_gain = 1/marginal_gain_noise
             # else:
-            #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/((i+1)*1)
-            #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/len(new_plan)
-            # marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path) + 1)
-            marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path))
+            #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/((i+1)*1)
+            #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/len(new_plan)
+            # marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path) + 1)
+            # marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
+            marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
+
+            plan_actions_gain = len(agent.plan)
+            new_plan_actions_gain = len(new_plan) - (1 if agent_node == (task.instructions["x"], task.instructions["y"]) else 0)
+            # logger.info(f"      >>>>>>> {agent.id}:: {len(agent.plan)} = {plan_actions_gain}")
+            # logger.info(f"      >>>>>>> {agent.id}:: {len(new_plan)} - {agent_node} == {(task.instructions['x'], task.instructions['y'])} ({agent_node == (task.instructions['x'], task.instructions['y'])}) = {new_plan_actions_gain}")
+
+            # marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain) - 1/(len(plan_path) + plan_actions_gain) + (1/marginal_gain_noise if agent_node == (task.instructions["x"], task.instructions["y"]) else marginal_gain_noise)
+            # logger.info(f"   >> {1/(len(new_plan_path) + new_plan_actions_gain)} - {1/(len(plan_path) + plan_actions_gain)} + {(1/marginal_gain_noise if agent_node == (task.instructions['x'], task.instructions['y']) else marginal_gain_noise)}")
+            marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain + marginal_gain_noise)
+
             # if task.id == "0":
             #     logger.info(f"      > Agent pos: {agent.id}")
             #     logger.info(f"      Path extension: {len(new_plan_path) - len(plan_path)}, old path: {len(plan_path)}, new path: {len(new_plan_path)}")
-            #     logger.info(f"      Marginal cost: {marginal_cost}")
+            #     logger.info(f"      Marginal gain: {marginal_gain}")
 
             # > Store the marginal gain
             marginal_gains[i] = {
-                "value": marginal_cost,
+                "value": marginal_gain,
                 "allocation": 0,
                 "bids_depth": SHALLOW
             }

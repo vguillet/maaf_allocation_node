@@ -335,7 +335,8 @@ class ICBBANode(ICBAgent):
             remove_agent_callback=remove_agent,
             fleet_state_change_callback=None,
             prioritise_local=False,
-            logger=self.get_logger()
+            logger=self.get_logger(),
+            id=self.agent.id
         )
 
         # ---- Merge received task list into local one
@@ -569,6 +570,10 @@ class ICBBANode(ICBAgent):
 
         # -------------------------------- Interceding agent logic
         if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
+
+            # for agent in self.fleet.agents_active:
+            #     self.get_logger().info(f"Agent {agent.id}: \n{agent.shared}")
+
             # -> Compute new bids
             for task in self.tasklog.tasks_pending:
                 self._bid(task=task, agent_lst=self.fleet.agents_active)
@@ -618,9 +623,9 @@ class ICBBANode(ICBAgent):
                     # -> Compute bids
                     self._bid(task=task, agent_lst=[self.agent])   # TODO: Review to better integrate intercession
 
-                # self.get_logger().info(f"Local bids: {self.local_bids_c}")
+                # self.local_bids_c = self.local_bids_c.sort_index().sort_index(axis=1)
                 # self.shared_bids_b = self.shared_bids_b.sort_index().sort_index(axis=1)
-                # self.get_logger().info(f"Shared bids: \n{self.shared_bids_b}")
+                # self.get_logger().info(f"\nShared bids: \n{self.shared_bids_b}\nLocal bids: \n{self.local_bids_c}")
 
                 # -> Merge local bids c into shared bids b
                 # > For each task ...
@@ -707,9 +712,9 @@ class ICBBANode(ICBAgent):
 
                     # -> Limit bundle sizes to 5
                     # > If max bundle size reached and selected task not at agent location
-                    # if len(self.agent.plan) >= 5 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
-                    #     # -> Break while loop
-                    #     break
+                    if len(self.agent.plan) >= 3 and self.agent.state.pos != [self.tasklog[selected_task_id].instructions["x"], self.tasklog[selected_task_id].instructions["y"]]:
+                        # -> Break while loop
+                        break
 
                     # self.get_logger().warning(f"Task {selected_task_id}: bid {self.local_bids_c.loc[selected_task_id, self.id]}")
 

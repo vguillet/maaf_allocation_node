@@ -251,7 +251,7 @@ class MAAFAgent(Node):
                     # TODO: Implement state init
                     state=AgentState(
                         agent_id=self.id,
-                        timestamp=self.current_timestamp,
+                        _timestamp=self.current_timestamp,
                         battery_level=100,
                         stuck=False,
                         x=0,
@@ -264,6 +264,19 @@ class MAAFAgent(Node):
                     plan=Plan()
                 )
             )
+
+        # -> Set get_timestamp method
+        def get_timestamp():
+            return self.current_timestamp
+
+        self.agent.state.set_get_timestamp(get_timestamp)
+
+        # -> Add timestamp sync to the self agent
+        def timestamp_sync(agent: Agent):
+            # > Call timestamp to force refresh it
+            agent.state.timestamp
+
+        self.agent.add_pre_asdict_subscriber(timestamp_sync)
 
         # ---- Task log
         """
@@ -827,8 +840,8 @@ class MAAFAgent(Node):
         self.agent.state.v = v
         self.agent.state.w = w
 
-        # > Timestamp
-        self.agent.state.timestamp = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
+        # # > Timestamp
+        # self.agent.state.timestamp = pose_msg.header.stamp.sec + pose_msg.header.stamp.nanosec * 1e-9
 
         # self.publish_allocation_state_msg()     # TODO: Cleanup
 

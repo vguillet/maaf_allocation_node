@@ -195,20 +195,42 @@ class ICBAgent(MAAFAgent):
         # > Convert received serialised fleet to fleet
         received_fleet = Fleet.from_dict(received_allocation_state["fleet"])
 
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED A")
+
         # ----- Update situation awareness
         task_state_change, fleet_state_change = self.update_situation_awareness(
             tasklog=received_tasklog,
             fleet=received_fleet
         )
 
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED B")
+
+            # self.get_logger().info(f"\n-------------- Received: \n{received_fleet['Turtle_2'].state.timestamp}")
+            self.get_logger().info(f"\n-------------- Received: \n{received_fleet['Turtle_2'].shared['local_bids_c']}")
+            self.get_logger().info(f"\n-------------- Local: \n{self.fleet['Turtle_2'].shared['local_bids_c']}")
+            # self.get_logger().info(f"-------------- Received: {received_fleet['Turtle_2'].state.print_get_timestamp()}")
+
+            self.get_logger().info(f"===================================== {self.id} RECEIVED C")
+            # for agent in received_fleet:
+            #     self.get_logger().info(f"\n--------------{agent.id}: \n{agent.shared['local_bids_c']}")
+            #     self.get_logger().info(f"\n--------------{agent.id}: \n{self.fleet[agent.id].shared['local_bids_c']}")
+
         # -> Get received agent
         received_agent = self.fleet[team_msg.source]
+
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED D")
 
         # ----- Update shared states
         self.update_shared_states(
             agent=received_agent,
             **received_allocation_state
         )
+
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED E")
 
         # ----- Update task
         # -> Update the task in the task list x the agent is assigned to
@@ -224,6 +246,9 @@ class ICBAgent(MAAFAgent):
                 **received_allocation_state,
             )
 
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED F")
+
         # ----- Update allocation
         self.update_allocation(
             reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change,    # TODO: Cleanup
@@ -231,9 +256,16 @@ class ICBAgent(MAAFAgent):
             **received_allocation_state
         )
 
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED G")
+
         # ----- Publish allocation state if state has changed
         # -> If state has changed, update local states (only publish when necessary)
         self.check_publish_state_change()
+
+        if self.id == "Turtle_1":
+            self.get_logger().info(f"===================================== {self.id} RECEIVED H")
+
 
         # else:
         #     # -> Check if the agent should rebroadcast the message

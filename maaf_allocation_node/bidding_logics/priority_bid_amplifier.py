@@ -100,7 +100,9 @@ def priority_bid_amplifier(
     for agent in valid_agents:
         # -> Check if the agent has a priority bellow the local priority
         # logger.info(f"Priority bid amplifier: {task.id}, {agent.id}: ")
-        # logger.info(f">>>>>>>>>>>>>> Bid {shared_bids_b.loc[task.id, agent.id]}: {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
+        logger.info(f">>>>>>>>>>>>>> Bid {shared_bids_b.loc[task.id, agent.id]}: {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
+        logger.info(f"{fleet[agent.id].shared['local_bids_c']}")
+
         if self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]:
             # -> Get the agent's bid
             agent_bid = shared_bids_b.loc[task.id, agent.id]
@@ -119,7 +121,6 @@ def priority_bid_amplifier(
         elif agent.id in list(fleet[agent.id].shared["local_bids_c"].columns) and task.id in list(fleet[agent.id].shared["local_bids_c"].index):
             # logger.info(f"++++++++++++> {agent.id} in: {agent.id in list(fleet[agent.id].shared['local_bids_c'].columns)},  and {task.id} in {task.id in list(fleet[agent.id].shared['local_bids_c'].index)}")
             # logger.info(f"++++++++++++> {agent.id} in: {list(fleet[agent.id].shared['local_bids_c'].columns)},  and {task.id} in {list(fleet[agent.id].shared['local_bids_c'].index)}")
-            # logger.info(f"{fleet[agent.id].shared['local_bids_c']}")
             # -> Check if base agent bid has changed
             # logger.info(f"============> {shared_bids_b.loc[task.id, agent.id]} != {fleet[agent.id].shared['local_bids_c'].loc[task.id, agent.id] * amplification_factor} = {shared_bids_b.loc[task.id, agent.id] != fleet[agent.id].shared['local_bids_c'].loc[task.id, agent.id] * amplification_factor}")
             if shared_bids_b.loc[task.id, agent.id] != fleet[agent.id].shared["local_bids_c"].loc[task.id, agent.id] * amplification_factor:
