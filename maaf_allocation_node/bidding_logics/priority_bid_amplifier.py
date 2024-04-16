@@ -52,7 +52,7 @@ def priority_bid_amplifier(
         shared_bids_priority_beta,
 
         # > Parameters
-        amplification_factor: int = 1000,
+        amplification_factor: int = 10000,
 
         *args,
         **kwargs
@@ -91,12 +91,16 @@ def priority_bid_amplifier(
         intercession_targets=intercession_targets
     )
 
+    # -> Remove self id
+    valid_agents = [agent for agent in valid_agents if agent.id != self_agent.id]
+
     # -> Magnifiy the existing bid it has a priority bellow the local priority
     bids = []
 
     for agent in valid_agents:
         # -> Check if the agent has a priority bellow the local priority
-        logger.info(f">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> {shared_bids_b.loc[task.id, agent.id]} - {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
+        # logger.info(f"Priority bid amplifier: {task.id}, {agent.id}: ")
+        # logger.info(f">>>>>>>>>>>>>> Bid {shared_bids_b.loc[task.id, agent.id]}: {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
         if self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]:
             # -> Get the agent's bid
             agent_bid = shared_bids_b.loc[task.id, agent.id]
@@ -112,8 +116,12 @@ def priority_bid_amplifier(
                 })
 
         # -> Check if bid present in local bids
-        elif agent.id in fleet[agent.id].shared["local_bids_c"].columns and task.id in fleet[agent.id].shared["local_bids_c"].index:
+        elif agent.id in list(fleet[agent.id].shared["local_bids_c"].columns) and task.id in list(fleet[agent.id].shared["local_bids_c"].index):
+            # logger.info(f"++++++++++++> {agent.id} in: {agent.id in list(fleet[agent.id].shared['local_bids_c'].columns)},  and {task.id} in {task.id in list(fleet[agent.id].shared['local_bids_c'].index)}")
+            # logger.info(f"++++++++++++> {agent.id} in: {list(fleet[agent.id].shared['local_bids_c'].columns)},  and {task.id} in {list(fleet[agent.id].shared['local_bids_c'].index)}")
+            # logger.info(f"{fleet[agent.id].shared['local_bids_c']}")
             # -> Check if base agent bid has changed
+            # logger.info(f"============> {shared_bids_b.loc[task.id, agent.id]} != {fleet[agent.id].shared['local_bids_c'].loc[task.id, agent.id] * amplification_factor} = {shared_bids_b.loc[task.id, agent.id] != fleet[agent.id].shared['local_bids_c'].loc[task.id, agent.id] * amplification_factor}")
             if shared_bids_b.loc[task.id, agent.id] != fleet[agent.id].shared["local_bids_c"].loc[task.id, agent.id] * amplification_factor:
                 # -> Get the agent's bid
                 agent_bid = fleet[agent.id].shared["local_bids_c"].loc[task.id, agent.id]
@@ -128,6 +136,9 @@ def priority_bid_amplifier(
                         "allocation": 0
                     })
 
-    logger.info(f"For task {task},\npriority bid amplifier: {pformat(bids)}")
+    # logger.info(f"!!!!!! Priority bid amplifier: Task: {task.id} {task.instructions['ACTION_AT_LOC']}: {[agent.id for agent in valid_agents]}")
+    # logger.info(f"  bid amplified: {pformat(bids)}")
+    # for agent in valid_agents:
+    #     logger.info(f"  b: {shared_bids_b.loc[task.id, agent.id]}")
 
     return bids

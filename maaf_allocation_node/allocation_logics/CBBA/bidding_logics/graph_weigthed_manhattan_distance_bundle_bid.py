@@ -196,7 +196,10 @@ def graph_weighted_manhattan_distance_bundle_bid(
             #     # marginal_cost = 1/(len(new_plan_path) - len(plan_path) + marginal_cost_noise + 1) * 1/len(new_plan)
             # marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path) + 1)
             marginal_cost = 1/(marginal_cost_noise + len(new_plan_path) - len(plan_path))
-            # logger.info(f"Path extension: {len(new_plan_path) - len(plan_path)}, old path: {len(plan_path)}, new path: {len(new_plan_path)}")
+            # if task.id == "0":
+            #     logger.info(f"      > Agent pos: {agent.id}")
+            #     logger.info(f"      Path extension: {len(new_plan_path) - len(plan_path)}, old path: {len(plan_path)}, new path: {len(new_plan_path)}")
+            #     logger.info(f"      Marginal cost: {marginal_cost}")
 
             # > Store the marginal gain
             marginal_gains[i] = {

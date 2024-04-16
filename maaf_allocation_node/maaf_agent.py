@@ -62,9 +62,14 @@ try:
     from maaf_tools.datastructures.agent.Plan import Plan
 
     from maaf_tools.tools import *
+    from maaf_tools.Singleton import SLogger
 
+    # > CBAA
     from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
     from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+
+    # > CBBA
+    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
     from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 except ModuleNotFoundError:
@@ -84,9 +89,14 @@ except ModuleNotFoundError:
     from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
 
     from maaf_tools.maaf_tools.tools import *
+    from maaf_tools.maaf_tools.Singleton import SLogger
 
+    # > CBAA
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.anticipated_action_task_interceding_agent import anticipated_action_task_interceding_agent
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
+
+    # > CBBA
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
 
 ##################################################################################################################
@@ -114,6 +124,9 @@ class MAAFAgent(Node):
             self,
             node_name=node_name,
         )
+
+        logger = SLogger()
+        logger.logger = self.get_logger()
 
         # TODO: Clean up
         # -> Get launch parameters configuration
@@ -164,15 +177,14 @@ class MAAFAgent(Node):
         # TODO: Cleanup
         if self.id in self.scenario.fleet_bids_mechanisms.keys():
             if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
-                self.bid_evaluation_function = graph_weighted_manhattan_distance_bid
+                # self.bid_evaluation_function = graph_weighted_manhattan_distance_bid           # CBAA
+                self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid    # CBBA
                 self.hierarchy_level = 0
 
             elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
-                self.bid_evaluation_function = anticipated_action_task_interceding_agent
+                # self.bid_evaluation_function = anticipated_action_task_interceding_agent       # CBAA
+                self.bid_evaluation_function = interceding_skill_based_bid_amplifier           # CBBA
                 self.hierarchy_level = 1
-
-            # self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-            # self.hierarchy_level = 0
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -1240,8 +1252,6 @@ class MAAFAgent(Node):
                        matrix_source_ij: float,
                        priority_source_ij: float,
 
-                       greater_than_zero_condition: bool = True,
-
                        # Reset
                        currently_assigned: Optional[bool] = None,
                        reset: bool = False
@@ -1272,13 +1282,8 @@ class MAAFAgent(Node):
         :return: Updated task value, updated matrix value, updated priority value
         """
 
-        if greater_than_zero_condition:
-            greater_than_zero_condition_met = matrix_source_ij > 0
-        else:
-            greater_than_zero_condition_met = True
-
         # -> If source priority is higher
-        if priority_source_ij > priority_updated_ij and greater_than_zero_condition_met:
+        if priority_source_ij > priority_updated_ij:
 
             # -> Update matrix value with source matrix value
             matrix_updated_ij = matrix_source_ij
@@ -1291,10 +1296,19 @@ class MAAFAgent(Node):
                 # -> Cancel goal
                 self._drop_task(
                     task_id=task_id,
-                    reset=False,    # This reset is not for task drop, but for y (hence False)
+                    reset=True,    # This reset is not for task drop, but for y (hence True)
                     traceback="Priority merge reset",
                     logger=True
                 )
+
+            # elif reset and agent_id == self.agent.id:   # TODO: REVIEW THEORY OF THIS CHANGE
+            #     # -> Cancel goal
+            #     self._drop_task(
+            #         task_id=self.agent.plan.current_task_id,
+            #         reset=False,    # This reset is not for task drop, but for y (hence False)
+            #         traceback="Priority merge reset",
+            #         logger=True
+            #     )
 
         # -> If updated priority is higher
         elif priority_source_ij < priority_updated_ij:
@@ -1306,6 +1320,7 @@ class MAAFAgent(Node):
             # Apply other tie-breakers
             # TODO: Implement tie-breakers, for now larger value is kept
             matrix_updated_ij = max(matrix_updated_ij, matrix_source_ij)
+            # matrix_updated_ij = matrix_source_ij
 
         return matrix_updated_ij, priority_updated_ij
 

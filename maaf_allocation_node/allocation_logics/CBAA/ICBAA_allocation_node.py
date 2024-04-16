@@ -77,7 +77,7 @@ class ICBAANode(ICBAgent):
         # ---- Init parent class
         ICBAgent.__init__(
             self,
-            node_name="CBAAwI_allocation_node",
+            node_name="ICBAA_node",
             skillset=None
         )
 
@@ -269,6 +269,12 @@ class ICBAANode(ICBAgent):
             logger=self.get_logger()
         )
 
+        # # TODO: Cleanup
+        # if self.bid_evaluation_function is anticipated_action_task_interceding_agent:
+        #     for task in self.tasklog.tasks_pending:
+        #         # -> Compute bids
+        #         self._bid(task=task, agent_lst=self.fleet.agents_active)
+
         return task_state_change, fleet_state_change
 
     def update_shared_states(self,
@@ -303,10 +309,11 @@ class ICBAANode(ICBAgent):
                 # if agent_id not in self.fleet.ids_active:
                 #     continue
 
-                # -> Priority merge with reset received current bids b into local current bids b
-                # > Determine correct matrix values
-                shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = (
-                    self.priority_merge(
+                # > If there is a shared bid, merge it into the current bids
+                if shared_bids_b.loc[task_id, agent_id] > 0:
+                    # -> Priority merge with reset received current bids b into local current bids b
+                    # > Determine correct matrix values
+                    shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
                         # Logging
                         task_id=task_id,
                         agent_id=agent_id,
@@ -317,38 +324,31 @@ class ICBAANode(ICBAgent):
                         priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
                         priority_source_ij=shared_bids_priority_beta.loc[task_id, agent_id],
 
-                        greater_than_zero_condition=True,
-
                         # Reset
                         currently_assigned=self.agent.plan.has_task(task_id=task_id),
                         reset=True
                     )
-                )
 
-                # > Update local states
-                self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
-                self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
+                    # > Update local states
+                    self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                    self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
 
                 # -> Priority merge received current allocations a into local current allocations a
                 # > Determine correct matrix values
-                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = (
-                    self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
+                shared_allocations_a_ij_updated, shared_allocations_priority_alpha_ij_updated = self.priority_merge(
+                    # Logging
+                    task_id=task_id,
+                    agent_id=agent_id,
 
-                        # Merging
-                        matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
-                        matrix_source_ij=shared_allocations_a.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
-                        priority_source_ij=shared_allocations_priority_alpha.loc[task_id, agent_id],
+                    # Merging
+                    matrix_updated_ij=self.shared_allocations_a.loc[task_id, agent_id],
+                    matrix_source_ij=shared_allocations_a.loc[task_id, agent_id],
+                    priority_updated_ij=self.shared_allocations_priority_alpha.loc[task_id, agent_id],
+                    priority_source_ij=shared_allocations_priority_alpha.loc[task_id, agent_id],
 
-                        greater_than_zero_condition=False,
-
-                        # Reset
-                        currently_assigned=self.agent.plan.has_task(task_id=task_id),
-                        reset=True
-                    )
+                    # Reset
+                    currently_assigned=self.agent.plan.has_task(task_id=task_id),
+                    reset=True
                 )
 
                 # > Update local states
@@ -505,30 +505,30 @@ class ICBAANode(ICBAgent):
             for task_id in self.tasklog.ids_pending:
                 # > For each agent ...
                 for agent_id in self.fleet.ids_active:
-                    # -> Priority merge local bids c into current bids b
-                    # > Determine correct matrix values
-                    shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
-                        # Logging
-                        task_id=task_id,
-                        agent_id=agent_id,
+                    # > If there is a local bid, merge it into the current bids
+                    if self.local_bids_c.loc[task_id, agent_id] > 0:
+                        # -> Priority merge local bids c into current bids b
+                        # > Determine correct matrix values
+                        shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
+                            # Logging
+                            task_id=task_id,
+                            agent_id=agent_id,
 
-                        # Merging
-                        matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
-                        matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
-                        priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
-                        priority_source_ij=self.hierarchy_level,
+                            # Merging
+                            matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
+                            matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
+                            priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
+                            priority_source_ij=self.hierarchy_level,
 
-                        greater_than_zero_condition=True,
+                            # Reset
+                            currently_assigned=self.agent.plan.has_task(task_id),
+                            # currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
+                            reset=False
+                        )
 
-                        # Reset
-                        currently_assigned=self.agent.plan.has_task(task_id),
-                        # currently_assigned=bool(self.task_list_x.loc[task_id, "task_list_x"]),
-                        reset=False
-                    )
-
-                    # > Update local states
-                    self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
-                    self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
+                        # > Update local states
+                        self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
+                        self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
 
                     # -> Merge local intercessions into allocation intercession
                     if self.hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
