@@ -34,8 +34,8 @@ except ModuleNotFoundError:
 
 ##################################################################################################################
 
-SHALLOW = 0
-DEEP = 1
+SHALLOW = 1
+DEEP = 2
 
 
 def graph_weighted_manhattan_distance_bundle_bid(
@@ -194,23 +194,12 @@ def graph_weighted_manhattan_distance_bundle_bid(
             # else:
             #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/((i+1)*1)
             #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/len(new_plan)
-            # marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path) + 1)
-            # marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
             marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
 
             plan_actions_gain = len(agent.plan)
             new_plan_actions_gain = len(new_plan) - (1 if agent_node == (task.instructions["x"], task.instructions["y"]) else 0)
-            # logger.info(f"      >>>>>>> {agent.id}:: {len(agent.plan)} = {plan_actions_gain}")
-            # logger.info(f"      >>>>>>> {agent.id}:: {len(new_plan)} - {agent_node} == {(task.instructions['x'], task.instructions['y'])} ({agent_node == (task.instructions['x'], task.instructions['y'])}) = {new_plan_actions_gain}")
-
             # marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain) - 1/(len(plan_path) + plan_actions_gain) + (1/marginal_gain_noise if agent_node == (task.instructions["x"], task.instructions["y"]) else marginal_gain_noise)
-            # logger.info(f"   >> {1/(len(new_plan_path) + new_plan_actions_gain)} - {1/(len(plan_path) + plan_actions_gain)} + {(1/marginal_gain_noise if agent_node == (task.instructions['x'], task.instructions['y']) else marginal_gain_noise)}")
             marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain + marginal_gain_noise)
-
-            # if task.id == "0":
-            #     logger.info(f"      > Agent pos: {agent.id}")
-            #     logger.info(f"      Path extension: {len(new_plan_path) - len(plan_path)}, old path: {len(plan_path)}, new path: {len(new_plan_path)}")
-            #     logger.info(f"      Marginal gain: {marginal_gain}")
 
             # > Store the marginal gain
             marginal_gains[i] = {

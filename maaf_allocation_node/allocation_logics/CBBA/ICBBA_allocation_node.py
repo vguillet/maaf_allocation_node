@@ -72,7 +72,7 @@ except ModuleNotFoundError:
 
 ##################################################################################################################
 
-SHALLOW = 1 # CANNOT BE ZERO, will clash with priority merge logic otherwise
+SHALLOW = 1     # CANNOT BE ZERO, will clash with priority merge logic otherwise
 DEEP = 2
 
 
@@ -336,7 +336,6 @@ class ICBBANode(ICBAgent):
             fleet_state_change_callback=None,
             prioritise_local=False,
             logger=self.get_logger(),
-            id=self.agent.id
         )
 
         # ---- Merge received task list into local one
@@ -655,6 +654,13 @@ class ICBBANode(ICBAgent):
                             self.shared_bids_b.loc[task_id, agent_id] = shared_bids_b_ij_updated
                             self.shared_bids_priority_beta.loc[task_id, agent_id] = shared_bids_priority_beta_ij_updated
 
+                            # -> Merge current bids b into local bids c according to intercession depth e
+                            if self.id == "Turtle_2":
+                                self.get_logger().info(f"Local bids c is 1: {int(self.bids_depth_e.loc[task_id, agent_id])} == {DEEP} = {int(self.bids_depth_e.loc[task_id, agent_id]) == DEEP}")
+
+                            if int(self.bids_depth_e.loc[task_id, agent_id]) == DEEP:
+                                self.local_bids_c.loc[task_id, agent_id] = self.shared_bids_b.loc[task_id, agent_id]
+
                         # -> Merge local intercessions into allocation intercession
                         if self.hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
                             allocation_state = self.action_to_allocation_state(
@@ -664,9 +670,13 @@ class ICBBANode(ICBAgent):
                             if allocation_state is not None:
                                 self.shared_allocations_a.loc[task_id, agent_id] = allocation_state
 
-                        # -> Merge current bids b into local bids c according to intercession depth e
-                        if self.bids_depth_e.loc[task_id, agent_id] == DEEP:
-                            self.local_bids_c.loc[task_id, agent_id] = self.shared_bids_b.loc[task_id, agent_id]
+                if self.id == "Turtle_2":
+                    # > Sort
+                    self.local_bids_c = self.local_bids_c.sort_index().sort_index(axis=1)
+                    self.shared_bids_b = self.shared_bids_b.sort_index().sort_index(axis=1)
+
+                    self.get_logger().info(f"Local bids c: \n{self.local_bids_c}")
+                    self.get_logger().info(f"Bids depth e: \n{self.bids_depth_e}")
 
                 # ---- Select task
                 # -> Create list of valid tasks (pandas series of task ids initialised as 0)

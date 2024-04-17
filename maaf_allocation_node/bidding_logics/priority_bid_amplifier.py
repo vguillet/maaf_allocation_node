@@ -100,8 +100,8 @@ def priority_bid_amplifier(
     for agent in valid_agents:
         # -> Check if the agent has a priority bellow the local priority
         # logger.info(f"Priority bid amplifier: {task.id}, {agent.id}: ")
-        logger.info(f">>>>>>>>>>>>>> Bid {shared_bids_b.loc[task.id, agent.id]}: {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
-        logger.info(f"{fleet[agent.id].shared['local_bids_c']}")
+        # logger.info(f">>>>>>>>>>>>>> Bid {shared_bids_b.loc[task.id, agent.id]}: {self_agent.hierarchy_level}>{shared_bids_priority_beta.loc[task.id, agent.id]}={self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]}")
+        # logger.info(f"{fleet[agent.id].shared['local_bids_c']}")
 
         if self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]:
             # -> Get the agent's bid

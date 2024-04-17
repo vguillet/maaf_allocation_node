@@ -37,6 +37,9 @@ except ImportError:
 
 ##################################################################################################################
 
+SHALLOW = 1
+DEEP = 2
+
 
 def interceding_skill_based_bid_amplifier(
         # > Self parameters
@@ -99,7 +102,8 @@ def interceding_skill_based_bid_amplifier(
                 0: {
                     "value": bid["bid"],
                     "allocation": bid["allocation"],
-                    "bids_depth": 1
+                    # "bids_depth": SHALLOW
+                    "bids_depth": DEEP
                 }
             }
         }
