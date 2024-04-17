@@ -849,6 +849,10 @@ class MAAFAgent(Node):
 
         # self.compute_bids()
 
+        if self.scenario.recompute_bids_on_state_change:
+            self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
+            self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
+
         # -> Publish goal (necessary to publish updated paths if computed before
         self.publish_goal_msg(meta_action="update", traceback="Pose update")
 
@@ -1351,7 +1355,7 @@ class MAAFAgent(Node):
         raise NotImplementedError
 
     @abstractmethod
-    def _drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool):
+    def _drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool, *args, **kwargs):
         """
         Drop a task from the task list x or y. If reset is True, the task is removed from the task list x, otherwise it is removed from the task list y.
 

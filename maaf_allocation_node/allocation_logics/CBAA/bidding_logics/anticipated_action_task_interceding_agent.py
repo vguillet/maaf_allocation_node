@@ -64,23 +64,23 @@ def anticipated_action_task_interceding_agent(
     bids = []
 
     # -> Compute base bid for self
-    bids += graph_weighted_manhattan_distance_bid(
-        # > Self parameters
-        self_agent=self_agent,
-        task=task,
-        agent_lst=[self_agent],
-        intercession_targets=intercession_targets,
-        logger=logger,
-
-        # > States
-        environment=environment,
-        fleet=fleet,
-        tasklog=tasklog,
-        shared_bids_b=shared_bids_b,  # TODO: Cleanup
-
-        *args,
-        **kwargs
-    )
+    # bids += graph_weighted_manhattan_distance_bid(
+    #     # > Self parameters
+    #     self_agent=self_agent,
+    #     task=task,
+    #     agent_lst=[self_agent],
+    #     intercession_targets=intercession_targets,
+    #     logger=logger,
+    #
+    #     # > States
+    #     environment=environment,
+    #     fleet=fleet,
+    #     tasklog=tasklog,
+    #     shared_bids_b=shared_bids_b,  # TODO: Cleanup
+    #
+    #     *args,
+    #     **kwargs
+    # )
 
     # # -> Get bids
     # bids += priority_bid_amplifier(

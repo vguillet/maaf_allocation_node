@@ -102,8 +102,8 @@ def interceding_skill_based_bid_amplifier(
                 0: {
                     "value": bid["bid"],
                     "allocation": bid["allocation"],
-                    # "bids_depth": SHALLOW
-                    "bids_depth": DEEP
+                    "bids_depth": SHALLOW
+                    # "bids_depth": DEEP
                 }
             }
         }
