@@ -204,7 +204,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
             # marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain) - 1/(len(plan_path) + plan_actions_gain) + (1/marginal_gain_noise if agent_node == (task.instructions["x"], task.instructions["y"]) else marginal_gain_noise)
             # new_plan_actions_gain = len(new_plan) - (1 if agent_node == (task.instructions["x"], task.instructions["y"]) else 0)
 
-            if agent_node == (task.instructions["x"], task.instructions["y"]):
+            if agent_node == (task.instructions["x"], task.instructions["y"]) and i == 0:
                 marginal_gain = 1/marginal_gain_noise
 
             else:
@@ -231,22 +231,22 @@ def graph_weighted_manhattan_distance_bundle_bid(
 
         # -> Find largest marginal gain and loc
         max_marginal_gain = None
-        insertion_loc = None
+        max_insertion_loc = None
 
         for insertion_loc, marginal_gain in marginal_gains.items():
             if max_marginal_gain is None:
                 max_marginal_gain = marginal_gain
-                insertion_loc = insertion_loc
+                max_insertion_loc = insertion_loc
 
             elif marginal_gain["bid"] > max_marginal_gain["bid"]:
                 max_marginal_gain = marginal_gain
-                insertion_loc = insertion_loc
+                max_insertion_loc = insertion_loc
 
         if max_marginal_gain is not None:
             # -> Add bid to the list
             bid = {
                 "agent_id": agent.id,
-                "insertion_loc": insertion_loc,
+                "insertion_loc": max_insertion_loc,
                 "bid": max_marginal_gain["bid"],
                 "allocation": max_marginal_gain["allocation"],
                 "bid_depth": max_marginal_gain["bid_depth"]
