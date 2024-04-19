@@ -136,7 +136,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
                     # -> Get nodes position
                     # > Source node
                     if source_node in fleet:
-                        source_node_loc = (fleet[source_node].state.x, fleet[source_node].state.y)
+                        source_node_loc = (fleet[source_node].state.x, fleet[source_node].state.y)  # TODO: SET AS AGENT NODE
                     else:
                         source_node_loc = (tasklog[source_node].instructions["x"], tasklog[source_node].instructions["y"])
 
@@ -225,8 +225,8 @@ def graph_weighted_manhattan_distance_bundle_bid(
             marginal_gains[i] = {
                 "bid": marginal_gain,
                 "allocation": 0,
-                "bid_depth": SHALLOW
-                # "bid_depth": DEEP
+                # "bid_depth": SHALLOW
+                "bid_depth": DEEP
             }
 
         # -> Find largest marginal gain and loc

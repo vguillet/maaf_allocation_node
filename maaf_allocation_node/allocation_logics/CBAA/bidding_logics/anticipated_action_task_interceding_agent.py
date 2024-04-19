@@ -41,7 +41,7 @@ def anticipated_action_task_interceding_agent(
 
         *args,
         **kwargs
-        ) -> list[dict]:
+        ) -> (list[dict], dict):
     """
     Calculate the bid for the provided agent as the inverse of the weighted Manhattan distance between the agent and the task.
     Magnify the bid for the task if the agent has the skillset for the task
@@ -64,122 +64,124 @@ def anticipated_action_task_interceding_agent(
     bids = []
 
     # -> Compute base bid for self
-    # bids += graph_weighted_manhattan_distance_bid(
-    #     # > Self parameters
-    #     self_agent=self_agent,
-    #     task=task,
-    #     agent_lst=[self_agent],
-    #     intercession_targets=intercession_targets,
-    #     logger=logger,
-    #
-    #     # > States
-    #     environment=environment,
-    #     fleet=fleet,
-    #     tasklog=tasklog,
-    #     shared_bids_b=shared_bids_b,  # TODO: Cleanup
-    #
-    #     *args,
-    #     **kwargs
-    # )
-
-    # # -> Get bids
-    # bids += priority_bid_amplifier(
-    #     # > Self parameters
-    #     self_agent=self_agent,
-    #     task=task,
-    #     agent_lst=agent_lst,
-    #     intercession_targets=intercession_targets,
-    #     logger=logger,
-    #
-    #     # > States
-    #     fleet=fleet,
-    #     shared_bids_b=shared_bids_b,
-    #     shared_bids_priority_beta=shared_bids_priority_beta,
-    #
-    #     # > Parameters
-    #     # amplification_factor=1000
-    # )
-
-    # -> Check the agents skillset against the task instructions
-    valid_agents = get_valid_agent_list(
+    local_bids, _ = graph_weighted_manhattan_distance_bid(
+        # > Self parameters
+        self_agent=self_agent,
         task=task,
-        agent_lst=agent_lst
+        agent_lst=[self_agent],
+        intercession_targets=intercession_targets,
+        logger=logger,
+
+        # > States
+        environment=environment,
+        fleet=fleet,
+        tasklog=tasklog,
+        shared_bids_b=shared_bids_b,  # TODO: Cleanup
+
+        *args,
+        **kwargs
     )
 
-    # -> Check the agents skillset against the follow up task instructions
-    valid_agents = get_valid_agents_for_follow_up_task(
+    bids += local_bids
+
+    # -> Get bids
+    bids += priority_bid_amplifier(
+        # > Self parameters
+        self_agent=self_agent,
         task=task,
-        agent_lst=valid_agents,
-        intercession_targets=intercession_targets
+        agent_lst=agent_lst,
+        intercession_targets=intercession_targets,
+        logger=logger,
+
+        # > States
+        fleet=fleet,
+        shared_bids_b=shared_bids_b,
+        shared_bids_priority_beta=shared_bids_priority_beta,
+
+        # > Parameters
+        # amplification_factor=1000
     )
 
-    # -> Calculate the weighted Manhattan distance for all valid agents
-    for agent in valid_agents:
-        # -> Agent node
-        agent_node = (agent.state.x, agent.state.y)
+    # # -> Check the agents skillset against the task instructions
+    # valid_agents = get_valid_agent_list(
+    #     task=task,
+    #     agent_lst=agent_lst
+    # )
+    #
+    # # -> Check the agents skillset against the follow up task instructions
+    # valid_agents = get_valid_agents_for_follow_up_task(
+    #     task=task,
+    #     agent_lst=valid_agents,
+    #     intercession_targets=intercession_targets
+    # )
+    #
+    # # -> Calculate the weighted Manhattan distance for all valid agents
+    # for agent in valid_agents:
+    #     # -> Agent node
+    #     agent_node = (agent.state.x, agent.state.y)
+    #
+    #     # -> Task node
+    #     task_node = (task.instructions["x"], task.instructions["y"])
+    #
+    #     # -> If agent on a node in the path for the current bid, reuse and trim the path
+    #     current_path = tasklog.get_path(
+    #         source=agent.id,
+    #         target=task.id,
+    #         requirement=None,
+    #         selection="shortest"
+    #     )
+    #
+    #     if current_path:
+    #         current_path = current_path["path"]
+    #
+    #         if agent_node in current_path:
+    #             path = current_path[current_path.index(agent_node):]
+    #             compute_path = False
+    #
+    #         else:
+    #             compute_path = True
+    #     else:
+    #         compute_path = True
+    #
+    #     if compute_path:
+    #         # -> Find the weigthed Manhattan distance between the agent and the task
+    #         path = environment["all_pairs_shortest_paths"][agent_node][task_node]
+    #         # path = nx.shortest_path(environment["graph"], agent_node, task_node)
+    #         # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
+    #
+    #     # > Store path to agent task log
+    #     tasklog.add_path(
+    #         source_node=agent.id,
+    #         target_node=task.id,
+    #         path={
+    #             "id": f"{agent.id}_{task.id}",
+    #             "path": path,
+    #             "requirements": ["ground"]
+    #         },
+    #         two_way=False,
+    #         selection="shortest"
+    #     )
+    #
+    #     # -> Calculate the total distance
+    #     total_distance = consistent_random(
+    #         string=agent.id + task.id,
+    #         min_value=0.0000000000001,
+    #         max_value=0.000000001
+    #     )    # Start with random tiny number to avoid division by zero and ties in allocation
+    #
+    #     # for i in range(len(path) - 1):
+    #     #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
+    #
+    #     total_distance += len(path) -1
+    #
+    #     # -> Add bias
+    #     total_distance = total_distance / 10000
+    #
+    #     # -> Add bid to the list
+    #     bids.append({
+    #         "agent_id": agent.id,
+    #         "bid": 1/total_distance,
+    #         "allocation": 0
+    #     })
 
-        # -> Task node
-        task_node = (task.instructions["x"], task.instructions["y"])
-
-        # -> If agent on a node in the path for the current bid, reuse and trim the path
-        current_path = tasklog.get_path(
-            source=agent.id,
-            target=task.id,
-            requirement=None,
-            selection="shortest"
-        )
-
-        if current_path:
-            current_path = current_path["path"]
-
-            if agent_node in current_path:
-                path = current_path[current_path.index(agent_node):]
-                compute_path = False
-
-            else:
-                compute_path = True
-        else:
-            compute_path = True
-
-        if compute_path:
-            # -> Find the weigthed Manhattan distance between the agent and the task
-            path = environment["all_pairs_shortest_paths"][agent_node][task_node]
-            # path = nx.shortest_path(environment["graph"], agent_node, task_node)
-            # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
-
-        # > Store path to agent task log
-        tasklog.add_path(
-            source_node=agent.id,
-            target_node=task.id,
-            path={
-                "id": f"{agent.id}_{task.id}",
-                "path": path,
-                "requirements": ["ground"]
-            },
-            two_way=False,
-            selection="shortest"
-        )
-
-        # -> Calculate the total distance
-        total_distance = consistent_random(
-            string=agent.id + task.id,
-            min_value=0.0000000000001,
-            max_value=0.000000001
-        )    # Start with random tiny number to avoid division by zero and ties in allocation
-
-        # for i in range(len(path) - 1):
-        #     total_distance += environment["graph"][path[i]][path[i + 1]]["weight"]
-
-        total_distance += len(path) -1
-
-        # -> Add bias
-        total_distance = total_distance / 10000
-
-        # -> Add bid to the list
-        bids.append({
-            "agent_id": agent.id,
-            "bid": 1/total_distance,
-            "allocation": 0
-        })
-
-    return bids
+    return bids, {}

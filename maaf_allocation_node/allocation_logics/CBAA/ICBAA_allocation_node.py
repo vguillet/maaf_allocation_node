@@ -73,7 +73,6 @@ except ModuleNotFoundError:
 
 class ICBAANode(ICBAgent):
     def __init__(self):
-
         # ---- Init parent class
         ICBAgent.__init__(
             self,
@@ -406,7 +405,7 @@ class ICBAANode(ICBAgent):
             return []
 
         # -> Compute bids
-        task_bids = self.bid_evaluation_function(
+        task_bids, _ = self.bid_evaluation_function(
             # > Self parameters
             self_agent=self.agent,
             task=task,
@@ -617,7 +616,9 @@ class ICBAANode(ICBAgent):
                    task_id: str,
                    reset: bool = False,
                    traceback: str = None,
-                   logger=True
+                   logger=True,
+                   *args,
+                   **kwargs
                    ) -> None:
         """
         Drop a task from the bundle list and plan
@@ -631,6 +632,9 @@ class ICBAANode(ICBAgent):
         if reset:
             # > Reset winning bids
             self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
+
+        if "bid(s)_reference_state" in self.tasklog[task_id].local.keys():
+            del self.tasklog[task_id].local["bid(s)_reference_state"]
 
         # -> Update local x state
         self.task_list_x.loc[task_id, "task_list_x"] = 0

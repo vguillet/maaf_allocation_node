@@ -98,11 +98,11 @@ def interceding_skill_based_bid_amplifier(
     for bid in magnified_bids:
         bids.append({
             "agent_id": bid["agent_id"],
-            "insertion_loc": 0,
             "bid": bid["bid"],
             "allocation": bid["allocation"],
-            "bid_depth": SHALLOW,
-            # "bid_depth": DEEP,
+            # "bid_depth": SHALLOW,
+            "insertion_loc": 0,
+            "bid_depth": DEEP,
             }
         )
 

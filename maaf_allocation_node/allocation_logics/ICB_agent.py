@@ -90,6 +90,23 @@ class ICBAgent(MAAFAgent):
             qos_profile=qos_sim_epoch
         )
 
+        # ---------- Recompute
+        if self.scenario.recompute_bids_on_state_change:
+            def recompute_on_pose_update():
+                if self.agent.plan.current_task_id is not None:
+                    # -> Drop current task
+                    self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
+                    self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
+
+                # -> Update allocation
+                self.update_allocation(reset_assignment=True)
+
+                # -> Publish allocation state if state has changed
+                # -> If state has changed, update local states (only publish when necessary)
+                self.check_publish_state_change()
+
+            self.add_on_pose_update_listener(recompute_on_pose_update)
+
     def sim_epoch_callback(self, msg: TeamCommStamped):
         sim_state = loads(msg.memo)
 

@@ -177,14 +177,26 @@ class MAAFAgent(Node):
         # TODO: Cleanup
         if self.id in self.scenario.fleet_bids_mechanisms.keys():
             if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
-                # self.bid_evaluation_function = graph_weighted_manhattan_distance_bid           # CBAA
-                self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid    # CBBA
+                # > Set hierarchy level
                 self.hierarchy_level = 0
 
+                # > Set bid evaluation function
+                if self.__class__.__name__ == "ICBAANode":
+                    self.bid_evaluation_function = graph_weighted_manhattan_distance_bid           # CBAA
+
+                elif self.__class__.__name__ == "ICBBANode":
+                    self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid    # CBBA
+
             elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
-                # self.bid_evaluation_function = anticipated_action_task_interceding_agent       # CBAA
-                self.bid_evaluation_function = interceding_skill_based_bid_amplifier           # CBBA
+                # > Set hierarchy level
                 self.hierarchy_level = 1
+
+                # > Set bid evaluation function
+                if self.__class__.__name__ == "ICBAANode":
+                    self.bid_evaluation_function = anticipated_action_task_interceding_agent       # CBAA
+
+                elif self.__class__.__name__ == "ICBBANode":
+                    self.bid_evaluation_function = interceding_skill_based_bid_amplifier           # CBBA
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -849,11 +861,6 @@ class MAAFAgent(Node):
 
         # self.compute_bids()
 
-        if self.scenario.recompute_bids_on_state_change and self.agent.plan.current_task_id is not None:
-            # -> Drop current task
-            self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
-            self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
-
         # -> Publish goal (necessary to publish updated paths if computed before
         self.publish_goal_msg(meta_action="update", traceback="Pose update")
 
@@ -1021,13 +1028,11 @@ class MAAFAgent(Node):
         # TODO: Remove once pathfinding handled by controller -----
         # -> Update path to start task to ensure agent path starts from current position
         if self.agent.plan:
-            start_task = self.tasklog[self.agent.plan[0]]
-            self.update_path(
-                source=self.agent.id,
-                source_pos=(self.agent.state.x, self.agent.state.y),
-                target=start_task.id,
-                target_pos=(start_task.instructions["x"], start_task.instructions["y"])
-            )
+            for source_node, target_node in self.agent.plan.get_node_pairs(agent_id=self.agent.id):
+                self.update_path(
+                    source_node=source_node,
+                    target_node=target_node,
+                )
         # TODO: ---------------------------------------------------
 
         # -> Create message
@@ -1081,18 +1086,11 @@ class MAAFAgent(Node):
             # TODO: Remove once pathfinding handled by controller -----
             # -> Update path to start task to ensure agent path starts from current position
             if self.agent.plan:
-                start_task = self.tasklog[self.agent.plan[0]]
-                self.update_path(
-                    source=self.agent.id,
-                    source_pos=(self.agent.state.x, self.agent.state.y),
-                    target=start_task.id,
-                    target_pos=(start_task.instructions["x"], start_task.instructions["y"])
-                )
-
-            # update_success = self.agent.update_plan(tasklog=self.tasklog)
-            #
-            # if not update_success:
-            #     self.get_logger().info(f"!!! WARNING: Plan update failed for agent {self.id}")
+                for source_node, target_node in self.agent.plan.get_node_pairs(agent_id=self.agent.id):
+                    self.update_path(
+                        source_node=source_node,
+                        target_node=target_node,
+                    )
 
             # -> Embed paths in agent
             agent_dict = self.agent.asdict()
@@ -1206,10 +1204,8 @@ class MAAFAgent(Node):
         return deserialised_state
 
     def update_path(self,
-                    source: str,
-                    source_pos: tuple,
-                    target: str,
-                    target_pos: tuple,
+                    source_node: str,
+                    target_node: str,
                     ) -> None:
         """
         Update path to a task for an agent
@@ -1220,18 +1216,19 @@ class MAAFAgent(Node):
         :param target_pos: Target node position
         """
 
+        # -> If agent on a node in the path for the current bid, reuse and trim the path
         current_path = self.tasklog.get_path(
-            source=source,
-            target=target,
-            requirement=None,
+            source=source_node,
+            target=target_node,
+            requirement=None,  # TODO: Fix once path requirements have been implemented
             selection="shortest"
         )
 
         if current_path:
             current_path = current_path["path"]
 
-            if source_pos in current_path:
-                path = current_path[current_path.index(source_pos):]
+            if source_node == self.agent.id and source_node in current_path:
+                path = current_path[current_path.index((self.agent.state.x, self.agent.state.y)):]
                 compute_path = False
 
             else:
@@ -1240,23 +1237,74 @@ class MAAFAgent(Node):
             compute_path = True
 
         if compute_path:
-            # -> Find the Manhattan distance between the agent and the task
-            path = self.environment["all_pairs_shortest_paths"][source_pos][target_pos]
-            # path = nx.shortest_path(self.environment["graph"], source_pos, target_pos)
-            # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
+            # -> Get nodes position
+            # > Source node
+            if source_node in self.fleet:
+                source_node_loc = (self.fleet[source_node].state.x, self.fleet[source_node].state.y)  # TODO: SET AS AGENT NODE
+            else:
+                source_node_loc = (self.tasklog[source_node].instructions["x"], self.tasklog[source_node].instructions["y"])
+
+            # > Target node
+            if target_node in self.fleet:
+                target_node_loc = (self.fleet[target_node].state.x, self.fleet[target_node].state.y)
+            else:
+                target_node_loc = (self.tasklog[target_node].instructions["x"], self.tasklog[target_node].instructions["y"])
+
+            # -> Find the weigthed Manhattan distance between the agent and the task
+            path = self.environment["all_pairs_shortest_paths"][source_node_loc][target_node_loc]
+            # path = nx.shortest_path(environment["graph"], agent_node, task_node)
+            # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
 
         # > Store path to agent task log
         self.tasklog.add_path(
-            source_node=source,
-            target_node=target,
+            source_node=source_node,
+            target_node=target_node,
             path={
-                "id": f"{self.id}:{source}_{target}",
+                "id": f"{self.agent.id}",
                 "path": path,
-                "requirements": ["ground"]
+                "requirements": ["ground"]  # TODO: Fix once path requirements have been implemented
             },
             two_way=False,
             selection="latest"
         )
+
+        # current_path = self.tasklog.get_path(
+        #     source=source,
+        #     target=target,
+        #     requirement=None,
+        #     selection="shortest"
+        # )
+        #
+        # if current_path:
+        #     current_path = current_path["path"]
+        #
+        #     if source_pos in current_path:
+        #         path = current_path[current_path.index(source_pos):]
+        #         compute_path = False
+        #
+        #     else:
+        #         compute_path = True
+        # else:
+        #     compute_path = True
+        #
+        # if compute_path:
+        #     # -> Find the Manhattan distance between the agent and the task
+        #     path = self.environment["all_pairs_shortest_paths"][source_pos][target_pos]
+        #     # path = nx.shortest_path(self.environment["graph"], source_pos, target_pos)
+        #     # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
+        #
+        # # > Store path to agent task log
+        # self.tasklog.add_path(
+        #     source_node=source,
+        #     target_node=target,
+        #     path={
+        #         "id": f"{self.id}:{source}_{target}",
+        #         "path": path,
+        #         "requirements": ["ground"]
+        #     },
+        #     two_way=False,
+        #     selection="latest"
+        # )
 
     def priority_merge(self,
                        # Logging

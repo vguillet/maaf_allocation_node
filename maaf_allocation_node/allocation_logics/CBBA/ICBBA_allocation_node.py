@@ -588,10 +588,6 @@ class ICBBANode(ICBAgent):
 
         # -------------------------------- Interceding agent logic
         if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-
-            # for agent in self.fleet.agents_active:
-            #     self.get_logger().info(f"Agent {agent.id}: \n{agent.shared}")
-
             # -> Compute new bids
             for task in self.tasklog.tasks_pending:
                 self._bid(task=task, agent_lst=self.fleet.agents_active)
@@ -621,23 +617,19 @@ class ICBBANode(ICBAgent):
                         self.shared_bids_b.loc[task.id, agent.id] = shared_bids_b_ij_updated
                         self.shared_bids_priority_beta.loc[task.id, agent.id] = shared_bids_priority_beta_ij_updated
 
-        # if self.id == "Turtle_1":
-        #     self.get_logger().info(f"Before: \n{self.shared_bids_b}")
-
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
-        elif self.allocation_state_change:
-            # # TODO: Cleanup once interceding agents are not the same as base agents
-            # interceding_agent = False
-            # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-            #     interceding_agent = True
-            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-            #     self.agent.hierarchy_level = 0
-            #     self.hierarchy_level = 0
-            # #  TODO: --------------------------------------------------------------
+        if self.allocation_state_change:
+            # TODO: Cleanup once interceding agents are not the same as base agents
+            interceding_agent = False
+            if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
+                interceding_agent = True
+                self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
+                self.agent.hierarchy_level = 0
+                self.hierarchy_level = 0
+            #  TODO: --------------------------------------------------------------
 
             while len(self.agent.plan) < len(self.tasklog.tasks_pending):
-                # self.get_logger().info(f"Agent {self.id}: Updating allocation state")
                 # -> Calculate bids
                 # > List tasks not in plan
                 remaining_tasks = [task for task in self.tasklog.tasks_pending if task.id not in self.agent.plan]
@@ -760,15 +752,12 @@ class ICBBANode(ICBAgent):
                 else:
                     break
 
-            # # TODO: Cleanup once interceding agents are not the same as base agents
-            # if interceding_agent:
-            #     self.bid_evaluation_function = interceding_skill_based_bid_amplifier
-            #     self.agent.hierarchy_level = 1
-            #     self.hierarchy_level = 1
-            # # TODO: ---------------------------------------------------------------
-
-        # if self.id == "Turtle_1":
-        #     self.get_logger().info(f"Before: \n{self.shared_bids_b}")
+            # TODO: Cleanup once interceding agents are not the same as base agents
+            if interceding_agent:
+                self.bid_evaluation_function = interceding_skill_based_bid_amplifier
+                self.agent.hierarchy_level = 1
+                self.hierarchy_level = 1
+            # TODO: ---------------------------------------------------------------
 
         # ---- Update local states
         if agent is not None and last_update_s is not None:
@@ -851,7 +840,9 @@ class ICBBANode(ICBAgent):
                    forward: bool = True,     # Must default to true to work with base priority merge method
                    traceback: str = None,
                    motive: Optional[str] = None,
-                   logger=True
+                   logger=True,
+                   *args,
+                   **kwargs
                    ) -> None:
         """
         Drop a task from the bundle list and plan

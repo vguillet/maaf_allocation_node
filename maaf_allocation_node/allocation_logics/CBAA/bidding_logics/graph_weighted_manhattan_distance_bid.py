@@ -40,7 +40,7 @@ def graph_weighted_manhattan_distance_bid(
 
         *args,
         **kwargs
-    ) -> list[dict]:
+    ) -> (list[dict], dict):
     """
     Calculate the bid for the provided agent as the inverse of the weighted Manhattan distance between the agent and the task.
 
@@ -137,4 +137,4 @@ def graph_weighted_manhattan_distance_bid(
             "allocation": 0
         })
 
-    return bids
+    return bids, {}
