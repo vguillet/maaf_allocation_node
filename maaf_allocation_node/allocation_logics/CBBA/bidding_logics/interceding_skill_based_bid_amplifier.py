@@ -56,7 +56,7 @@ def interceding_skill_based_bid_amplifier(
 
         *args,
         **kwargs
-        ) -> list[dict]:
+        ) -> (list[dict], dict):
     """
     Calculate the bid for the provided agent as the inverse of the weighted Manhattan distance between the agent and the task.
     Magnify the bid for the task if the agent has the skillset for the task
@@ -98,15 +98,12 @@ def interceding_skill_based_bid_amplifier(
     for bid in magnified_bids:
         bids.append({
             "agent_id": bid["agent_id"],
-            "marginal_gains": {
-                0: {
-                    "value": bid["bid"],
-                    "allocation": bid["allocation"],
-                    "bids_depth": SHALLOW
-                    # "bids_depth": DEEP
-                }
+            "insertion_loc": 0,
+            "bid": bid["bid"],
+            "allocation": bid["allocation"],
+            "bid_depth": SHALLOW,
+            # "bid_depth": DEEP,
             }
-        }
-    )
+        )
 
-    return bids
+    return bids, {}

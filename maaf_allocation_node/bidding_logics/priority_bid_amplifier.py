@@ -101,6 +101,9 @@ def priority_bid_amplifier(
     bids = []
 
     for agent in valid_agents:
+        if agent == self_agent and fleet[agent.id].shared["local_bids_c"].loc[task.id, agent.id] > 100:
+            continue
+
         # -> Check if the agent has a priority bellow the local priority
         if self_agent.hierarchy_level > shared_bids_priority_beta.loc[task.id, agent.id]:
             # -> Get the agent's bid

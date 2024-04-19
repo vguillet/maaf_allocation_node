@@ -49,9 +49,10 @@ def graph_weighted_manhattan_distance_bundle_bid(
         fleet: Fleet,
         tasklog: TaskLog,
 
+        bids_cache = {},
         *args,
         **kwargs
-        ) -> list[dict]:
+        ) -> (list[dict], dict):
     """
     For the provided agent and task, calculate the marginal gain achieved from inserting a task into the plan
      at the different positions
@@ -70,18 +71,10 @@ def graph_weighted_manhattan_distance_bundle_bid(
     
     ex.: [{
         "agent_id": "agent_1",
-        "marginal_gains": {
-            0: {
-                "value": ...,
-                "allocation": ... (0/1/2),
-                "bids_depth": ... (0/1)
-                },
-            1: {...},
-            2: {...},
-            3: {...}
-            }
-        }, 
-        ...
+        "insertion_loc": ...,
+        "bid": ...,
+        "allocation": ... (0/1/2),
+        "bid_depth": ... (0/1)
         }]
     """
 
@@ -94,6 +87,18 @@ def graph_weighted_manhattan_distance_bundle_bid(
     for agent in valid_agents:
         # -> Agent node
         agent_node = (agent.state.x, agent.state.y)
+
+        # ----- MEMOIZATION LOGIC
+        # -> Construct the key for the marginal gains cache
+        key = (agent_node, tuple(agent.plan.task_sequence), task.id)
+
+        # -> If the marginal gains for the current agent and task have been calculated before, reuse the result
+        if key in bids_cache.keys():
+            bids.append(bids_cache[key])
+            # logger.info(f"Reusing marginal gains for agent {agent.id} and task {task.id} from cache.")
+            continue
+
+        # -----
 
         # -> Calculate the marginal gains for the each insertion position
         marginal_gains = {}
@@ -118,7 +123,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 if current_path:
                     current_path = current_path["path"]
 
-                    if agent_node in current_path:
+                    if source_node in fleet and source_node in current_path:
                         path = current_path[current_path.index(agent_node):]
                         compute_path = False
 
@@ -194,29 +199,62 @@ def graph_weighted_manhattan_distance_bundle_bid(
             # else:
             #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/((i+1)*1)
             #     # marginal_gain = 1/(len(new_plan_path) - len(plan_path) + marginal_gain_noise + 1) * 1/len(new_plan)
-            marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
+            # marginal_gain = 1/(marginal_gain_noise + len(new_plan_path) - len(plan_path))
 
             # marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain) - 1/(len(plan_path) + plan_actions_gain) + (1/marginal_gain_noise if agent_node == (task.instructions["x"], task.instructions["y"]) else marginal_gain_noise)
             # new_plan_actions_gain = len(new_plan) - (1 if agent_node == (task.instructions["x"], task.instructions["y"]) else 0)
-            new_plan_actions_gain = len(new_plan)
-            plan_actions_gain = len(agent.plan)
-            marginal_gain = 1/(len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain + marginal_gain_noise)
 
             if agent_node == (task.instructions["x"], task.instructions["y"]):
                 marginal_gain = 1/marginal_gain_noise
 
+            else:
+                plan_actions_gain = len(agent.plan)
+                new_plan_actions_gain = len(new_plan)
+                try:
+                    marginal_gain = 1 / (len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain) + marginal_gain_noise
+
+                except:
+                    logger.warning(f"Agent {agent.id} ({agent_node}) for task {task.id} inserted at {i}:"
+                                   f"\n    - Old Plan: {agent.plan} ({len(plan_path)} distance steps + {len(agent.plan)} actions) = {len(plan_path) + len(agent.plan)}"
+                                   f"\n    - New Plan: {new_plan} ({len(new_plan_path)} distance steps + {len(new_plan)} actions) = {len(new_plan_path) + len(new_plan)}"
+                                   f"\n        - Old: {plan_path}"
+                                   f"\n        - New: {new_plan_path}"
+                                   )
+
             # > Store the marginal gain
             marginal_gains[i] = {
-                "value": marginal_gain,
+                "bid": marginal_gain,
                 "allocation": 0,
-                "bids_depth": SHALLOW
-                # "bids_depth": DEEP
+                "bid_depth": SHALLOW
+                # "bid_depth": DEEP
             }
 
-        # -> Add bid to the list
-        bids.append({
-            "agent_id": agent.id,
-            "marginal_gains": marginal_gains
-        })
+        # -> Find largest marginal gain and loc
+        max_marginal_gain = None
+        insertion_loc = None
 
-    return bids
+        for insertion_loc, marginal_gain in marginal_gains.items():
+            if max_marginal_gain is None:
+                max_marginal_gain = marginal_gain
+                insertion_loc = insertion_loc
+
+            elif marginal_gain["bid"] > max_marginal_gain["bid"]:
+                max_marginal_gain = marginal_gain
+                insertion_loc = insertion_loc
+
+        if max_marginal_gain is not None:
+            # -> Add bid to the list
+            bid = {
+                "agent_id": agent.id,
+                "insertion_loc": insertion_loc,
+                "bid": max_marginal_gain["bid"],
+                "allocation": max_marginal_gain["allocation"],
+                "bid_depth": max_marginal_gain["bid_depth"]
+                }
+
+            bids.append(bid)
+
+            # -> Store in the marginal gains cache
+            bids_cache[key] = bid
+
+    return bids, bids_cache

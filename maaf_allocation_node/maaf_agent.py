@@ -849,7 +849,8 @@ class MAAFAgent(Node):
 
         # self.compute_bids()
 
-        if self.scenario.recompute_bids_on_state_change:
+        if self.scenario.recompute_bids_on_state_change and self.agent.plan.current_task_id is not None:
+            # -> Drop current task
             self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
             self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
 

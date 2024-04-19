@@ -96,6 +96,8 @@ class ICBBANode(ICBAgent):
         # self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=False))
         # self.add_on_pose_update_listener(self.check_publish_state_change)
 
+        self.bids_cache = {}
+
         # ----------------------------------- Confirm initialisation
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
@@ -619,20 +621,23 @@ class ICBBANode(ICBAgent):
                         self.shared_bids_b.loc[task.id, agent.id] = shared_bids_b_ij_updated
                         self.shared_bids_priority_beta.loc[task.id, agent.id] = shared_bids_priority_beta_ij_updated
 
+        # if self.id == "Turtle_1":
+        #     self.get_logger().info(f"Before: \n{self.shared_bids_b}")
+
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
-        if self.allocation_state_change:
-            # TODO: Cleanup once interceding agents are not the same as base agents
-            interceding_agent = False
-            if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-                interceding_agent = True
-                self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-                self.agent.hierarchy_level = 0
-                self.hierarchy_level = 0
-            #  TODO: --------------------------------------------------------------
+        elif self.allocation_state_change:
+            # # TODO: Cleanup once interceding agents are not the same as base agents
+            # interceding_agent = False
+            # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
+            #     interceding_agent = True
+            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
+            #     self.agent.hierarchy_level = 0
+            #     self.hierarchy_level = 0
+            # #  TODO: --------------------------------------------------------------
 
             while len(self.agent.plan) < len(self.tasklog.tasks_pending):
-                self.get_logger().info(f"Agent {self.id}: Updating allocation state")
+                # self.get_logger().info(f"Agent {self.id}: Updating allocation state")
                 # -> Calculate bids
                 # > List tasks not in plan
                 remaining_tasks = [task for task in self.tasklog.tasks_pending if task.id not in self.agent.plan]
@@ -755,12 +760,15 @@ class ICBBANode(ICBAgent):
                 else:
                     break
 
-            # TODO: Cleanup once interceding agents are not the same as base agents
-            if interceding_agent:
-                self.bid_evaluation_function = interceding_skill_based_bid_amplifier
-                self.agent.hierarchy_level = 1
-                self.hierarchy_level = 1
-            # TODO: ---------------------------------------------------------------
+            # # TODO: Cleanup once interceding agents are not the same as base agents
+            # if interceding_agent:
+            #     self.bid_evaluation_function = interceding_skill_based_bid_amplifier
+            #     self.agent.hierarchy_level = 1
+            #     self.hierarchy_level = 1
+            # # TODO: ---------------------------------------------------------------
+
+        # if self.id == "Turtle_1":
+        #     self.get_logger().info(f"Before: \n{self.shared_bids_b}")
 
         # ---- Update local states
         if agent is not None and last_update_s is not None:
@@ -792,7 +800,7 @@ class ICBBANode(ICBAgent):
             return []
 
         # -> Compute the marginal gains for the agent
-        agents_marginal_gains = self.bid_evaluation_function(
+        task_bids, bids_cache = self.bid_evaluation_function(
             # > Self parameters
             self_agent=self.agent,
             task=task,
@@ -807,47 +815,35 @@ class ICBBANode(ICBAgent):
                 local_allocation_state=True,
                 shared_allocation_state=True,
                 serialised=False
-            )
-            # tasklog=self.tasklog,
-            # fleet=self.fleet,
-            # environment=self.environment,
+            ),
+            bids_cache=self.bids_cache
         )
 
-        # > For each agent ...
-        for agent_bid_dict in agents_marginal_gains:
-            agent_id = agent_bid_dict["agent_id"]
+        # -> Merge the marginal gains cache
+        self.bids_cache = {**self.bids_cache, **bids_cache}
 
-            max_marginal_gain = None
-            insertion_loc = None
+        # -> Store bids to local bids matrix
+        for bid in task_bids:
+            # > Bid
+            self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
 
-            for i, marginal_gain in agent_bid_dict["marginal_gains"].items():
-                if max_marginal_gain is None:
-                    max_marginal_gain = marginal_gain
-                    insertion_loc = i
+            # > Bid depth
+            # TODO: Consider priority merge..?
+            self.bids_depth_e.loc[task.id, bid["agent_id"]] = bid["bid_depth"]
 
-                elif marginal_gain["value"] > max_marginal_gain["value"]:
-                    max_marginal_gain = marginal_gain
-                    insertion_loc = i
+            # > Allocation
+            self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
 
-            # -> Store bid to local bids matrix
-            if max_marginal_gain is not None:
-                # > Bid
-                self.local_bids_c.loc[task.id, agent_id] = max_marginal_gain["value"]
+            # > Insertion
+            if "insertions" not in self.fleet[bid["agent_id"]].local.keys():
+                self.fleet[bid["agent_id"]].local['insertions'] = {}
 
-                # TODO: Consider priority merge..?
-                # > Bid depth
-                self.bids_depth_e.loc[task.id, agent_id] = max_marginal_gain["bids_depth"]
+            self.fleet[bid["agent_id"]].local['insertions'][task.id] = bid["insertion_loc"]
 
-                # > Allocation
-                self.local_allocations_d.loc[task.id, agent_id] = max_marginal_gain["allocation"]
+        # -> Set task bid reference state
+        task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
 
-                # -> Store insertion to agent local
-                if "insertions" not in self.fleet[agent_id].local.keys():
-                    self.fleet[agent_id].local['insertions'] = {}
-
-                self.fleet[agent_id].local['insertions'][task.id] = insertion_loc
-
-        return agents_marginal_gains
+        return task_bids
 
     def _drop_task(self,
                    task_id: str,
