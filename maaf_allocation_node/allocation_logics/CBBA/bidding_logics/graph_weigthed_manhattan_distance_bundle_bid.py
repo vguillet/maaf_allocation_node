@@ -211,7 +211,8 @@ def graph_weighted_manhattan_distance_bundle_bid(
                 plan_actions_gain = len(agent.plan)
                 new_plan_actions_gain = len(new_plan)
                 try:
-                    marginal_gain = 1 / (len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain) + marginal_gain_noise
+                    # marginal_gain = 1 / (len(new_plan_path) + new_plan_actions_gain - len(plan_path) - plan_actions_gain) + marginal_gain_noise
+                    marginal_gain = 1 / (len(new_plan_path) + new_plan_actions_gain) + marginal_gain_noise
 
                 except:
                     logger.warning(f"Agent {agent.id} ({agent_node}) for task {task.id} inserted at {i}:"

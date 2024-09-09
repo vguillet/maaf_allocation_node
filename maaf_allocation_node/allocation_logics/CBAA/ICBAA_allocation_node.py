@@ -421,10 +421,6 @@ class ICBAANode(ICBAgent):
                 shared_allocation_state=True,
                 serialised=False
             )
-            # tasklog=self.tasklog,
-            # fleet=self.fleet,
-            # environment=self.environment,
-            # shared_bids_b=self.shared_bids_b,                           # TODO: Cleanup
         )
 
         # -> Store bids to local bids matrix

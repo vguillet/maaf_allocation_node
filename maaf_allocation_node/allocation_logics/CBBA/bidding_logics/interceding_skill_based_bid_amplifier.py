@@ -54,6 +54,7 @@ def interceding_skill_based_bid_amplifier(
         shared_bids_b,
         shared_bids_priority_beta,
 
+        interventionism: float,
         *args,
         **kwargs
         ) -> (list[dict], dict):
@@ -73,6 +74,19 @@ def interceding_skill_based_bid_amplifier(
     :param shared_bids_b: The shared bids for the agents.
     :param shared_bids_priority_beta: The priority shared bids for the agents.
     """
+
+    # -> Check if task intervention has been established
+    if "intervention" not in task.local.keys():
+        # -> Establish if intervention performed
+        # > Compute boolean with specific probabilities
+        intervention = random.choices([True, False], weights=[interventionism, 1 - interventionism], k=1)[0]
+
+        # > Store result in task local field
+        task.local["intervention"] = intervention
+
+    # -> If no intervention, return empty bids
+    if not task.local["intervention"]:
+        return [], {}
 
     # -> Get bids
     magnified_bids = priority_bid_amplifier(

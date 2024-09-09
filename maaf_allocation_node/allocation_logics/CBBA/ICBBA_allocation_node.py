@@ -582,6 +582,8 @@ class ICBBANode(ICBAgent):
         :param last_update_s: Task last update matrix s received from the fleet
         """
 
+        # TODO: Cleanup once base and interceding agents are separate
+
         # if reset_assignment and self.agent.plan.current_task_id is not None:
         #     self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
         #     self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
@@ -805,7 +807,8 @@ class ICBBANode(ICBAgent):
                 shared_allocation_state=True,
                 serialised=False
             ),
-            bids_cache=self.bids_cache
+            bids_cache=self.bids_cache,
+            interventionism=self.scenario.interventionism
         )
 
         # -> Merge the marginal gains cache
