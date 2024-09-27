@@ -76,16 +76,16 @@ def interceding_skill_based_bid_amplifier(
     """
 
     # -> Check if task intervention has been established
-    if "intervention" not in task.local.keys():
+    if "intervention" not in task.shared.keys():
         # -> Establish if intervention performed
         # > Compute boolean with specific probabilities
         intervention = random.choices([True, False], weights=[interventionism, 1 - interventionism], k=1)[0]
 
         # > Store result in task local field
-        task.local["intervention"] = intervention
+        task.shared["intervention"] = intervention
 
     # -> If no intervention, return empty bids
-    if not task.local["intervention"]:
+    if not task.shared["intervention"]:
         return [], {}
 
     # -> Get bids

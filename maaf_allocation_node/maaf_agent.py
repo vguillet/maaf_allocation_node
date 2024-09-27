@@ -133,7 +133,7 @@ class MAAFAgent(Node):
         self.declare_parameters(
             namespace="",
             parameters=[
-                ("scenario_id", "simple_sim"),
+                ("scenario_id", "Scenario_0_full_intercession_no_recompute_0_interventionism_0.json"),
             ]
         )
 
@@ -811,7 +811,14 @@ class MAAFAgent(Node):
 
             self.environment = json_to_graph(graph_json=msg.memo)
 
-            self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
+            # self.get_logger().info(f"         > {self}: Received environment update: Computing all shortest paths using floyd_warshall...")
+            #self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
+            # self.environment["all_pairs_shortest_paths"] = dict(nx.floyd_warshall(self.environment["graph"]))
+            # self.get_logger().info(f"         > {self}: Received environment update: Done computing all shortest paths")
+
+            # self.compute_shortest_paths()
+
+            print(self.environment["shortest_paths"])
 
             self.get_logger().info(f"         < Received environment update")
 
@@ -833,6 +840,49 @@ class MAAFAgent(Node):
 
         # -> Call environment update listeners
         self.call_on_env_update_listeners(environment=self.environment)
+
+    # def compute_shortest_paths(self):
+    #     # -> Display the graph
+    #     # nx.draw(self.graph, pos=self.pos)
+    #     # plt.show()
+    #
+    #     self.get_logger().info(f"         > {self}: Computing all shortest paths...")
+    #     # self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
+    #
+    #     # -> List all task nodes from scenario
+    #     task_node_locs = [[goto_task["instructions"]["x"], goto_task["instructions"]["y"]] for goto_task in self.scenario.goto_tasks]
+    #
+    #     # print(task_node_locs)
+    #     # print("\n", self.environment["pos"])
+    #
+    #     # -> Compute all shortest paths from all nodes to all task nodes
+    #     matching_nodes = [node for node, position in self.environment["pos"].items() if position in task_node_locs]
+    #
+    #     print(f"Matching: {len(matching_nodes)}/{len(self.scenario.goto_tasks)}:", matching_nodes)
+    #     print("Computing all shortest paths from all nodes to all task nodes...")
+    #     self.environment["all_pairs_shortest_paths"] = {}
+    #
+    #     for i, task_node_loc in enumerate(task_node_locs):
+    #         print(f"> Computing shortest paths - {i+1}/{len(task_node_locs)}")
+    #
+    #         # > Find node corresponding to task
+    #         task_node = [node for node, position in self.environment["pos"].items() if position == task_node_loc][0]
+    #
+    #         # > Find paths from node to all other nodes
+    #         paths = dict(nx.single_source_shortest_path(G=self.environment["graph"], source=task_node))
+    #
+    #         # > Add paths from each node to the task node
+    #         for source_node, path in paths.items():
+    #             # > Invert path
+    #             path.reverse()
+    #
+    #             # > Record path from source to task node
+    #             if source_node not in self.environment["all_pairs_shortest_paths"].keys():
+    #                 self.environment["all_pairs_shortest_paths"][str(source_node)] = {}
+    #
+    #             self.environment["all_pairs_shortest_paths"][str(source_node)][str(task_node)] = path
+    #
+    #     self.get_logger().info(f"         > {self}: Done computing all shortest paths")
 
     def __pose_subscriber_callback(self, pose_msg) -> None:
         """
