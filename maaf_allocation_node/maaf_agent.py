@@ -114,6 +114,7 @@ class MAAFAgent(Node):
                  id: str = None,
                  name: str = None,
                  skillset: List[str] = None,
+                 visibility_range: float = None,
                  bid_estimator=None
                  ):
         """
@@ -168,6 +169,14 @@ class MAAFAgent(Node):
             self.skillset = self.scenario.fleet_skillsets[self.id]
         else:
             self.skillset = skillset
+
+        if visibility_range is None:
+            try:
+                self.visibility_range = self.scenario.visibility_ranges[self.id]
+            except:
+                self.visibility_range = 0
+        else:
+            self.visibility_range = visibility_range
 
         # ---- Bid evaluation function
         if bid_estimator is None:
@@ -842,7 +851,7 @@ class MAAFAgent(Node):
 
     def compute_shortest_paths(self):
         # -> Retrieve path from scenario ID
-        shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Configs/{self.scenario.scenario_id.split('_')[1]}_shortest_paths.json"
+        shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Parsed_maps/{self.scenario.scenario_id.split('_')[1]}_shortest_paths.json"
 
         # -> If path exists, parse it
         if os.path.exists(shortest_paths_path):
@@ -1119,6 +1128,8 @@ class MAAFAgent(Node):
 
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
+        # self.fleet_msgs_pub.publish(msg)
+        # self.fleet_msgs_pub.publish(msg)
 
     def publish_goal_msg(self,
                          meta_action: str = "empty",     # empty/update,

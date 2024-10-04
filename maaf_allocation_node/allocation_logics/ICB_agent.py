@@ -110,9 +110,6 @@ class ICBAgent(MAAFAgent):
     def sim_epoch_callback(self, msg: TeamCommStamped):
         sim_state = loads(msg.memo)
 
-        if self.id == "Turtle_1":
-            self.get_logger().warning(f"------------------- Epoch: {sim_state['epoch']}")
-
     # ============================================================== PROPERTIES
 
     # ============================================================== METHODS
@@ -144,10 +141,12 @@ class ICBAgent(MAAFAgent):
             self.get_logger().info(f"{self.id} * Task {task.id} found (Type: {task.type}) - Pending task count: {len(self.tasklog.ids_pending) + 1}")
 
         elif task_msg.meta_action == "completed":
+            # if task.id in self.tasklog.ids_pending: # Only log if task was pending (avoid double logging)
             self.get_logger().info(f"{self.id} v Task {task.id} completed - Pending task count: {len(self.tasklog.ids_pending) - 1}")
 
         elif task_msg.meta_action == "cancelled":
-            self.get_logger().info(f"{self.id} x Task {task.id} cancelled - Pending task count: {len(self.tasklog.ids_pending) - 1}")
+            if task.id in self.tasklog.ids_pending: # Only log if task was pending (avoid double logging)
+                self.get_logger().info(f"{self.id} x Task {task.id} cancelled - Pending task count: {len(self.tasklog.ids_pending) - 1}")
 
         # -> Create new task
         if task_msg.meta_action == "pending":
@@ -169,7 +168,12 @@ class ICBAgent(MAAFAgent):
 
         # -> Update situation awareness
         tasklog = TaskLog()
-        tasklog.add_task(task=task)
+        success = tasklog.add_task(task=task)
+
+        # self.get_logger().info(f">>>>>>>>>>>>>>>>>>>>>>>>>> {self.id} - Task {task.id} added to tasklog: {success}")
+
+        if self.id == "Turtle_4":
+            self.get_logger().info(f"\n{self.tasklog.pretty_table}")
 
         task_state_change, fleet_state_change = self.update_situation_awareness(tasklog=tasklog, fleet=None)
 
