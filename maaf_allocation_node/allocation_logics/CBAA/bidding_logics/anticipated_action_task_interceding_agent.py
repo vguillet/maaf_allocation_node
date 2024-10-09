@@ -2,11 +2,8 @@
 ##################################################################################################################
 
 # Built-in/Generic Imports
-import random
-from pprint import pformat
 
 # Libs
-import networkx as nx
 
 # Own modules
 from maaf_tools.datastructures.task.Task import Task
@@ -14,7 +11,6 @@ from maaf_tools.datastructures.task.TaskLog import TaskLog
 
 from maaf_tools.datastructures.agent.Agent import Agent
 from maaf_tools.datastructures.agent.Fleet import Fleet
-from maaf_tools.datastructures.agent.AgentState import AgentState
 
 from maaf_allocation_node.allocation_logics.CBAA.bidding_logics.graph_weighted_manhattan_distance_bid import graph_weighted_manhattan_distance_bid
 from maaf_allocation_node.bidding_logics.priority_bid_amplifier import priority_bid_amplifier
