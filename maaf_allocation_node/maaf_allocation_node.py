@@ -6,6 +6,9 @@
 
 
 # Libs
+import cProfile
+import pstats
+import io
 
 # ROS2 Imports
 import rclpy
@@ -38,8 +41,39 @@ def main(args=None):
     # -> Spin fast
     rclpy.spin(node.allocation_node)
 
+    # -> Terminate node
     node.allocation_node.destroy_node()
     rclpy.shutdown()
+
+
+# def main(args=None):
+#     # `rclpy` library is initialized
+#     rclpy.init(args=args)
+#
+#     node = maaf_allocation_node()
+#
+#     # Profile the main logic
+#     pr = cProfile.Profile()
+#     pr.enable()
+#
+#     # -> Spin fast
+#     rclpy.spin(node.allocation_node)
+#
+#     pr.disable()
+#
+#     # -> Print the profiling results
+#     s = io.StringIO()
+#     sortby = 'cumulative'
+#     ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+#     ps.print_stats()
+#
+#     # -> Dump to file
+#     with open(f"/home/vguillet/ros2_ws/{node.allocation_node.id}.txt", "w") as f:
+#         f.write(s.getvalue())
+#
+#     # -> Terminate node
+#     node.allocation_node.destroy_node()
+#     rclpy.shutdown()
 
 
 if __name__ == '__main__':

@@ -23,7 +23,6 @@ import sys
 import os
 from abc import abstractmethod
 from typing import List, Optional, Tuple
-from json import dumps, loads
 import warnings
 from copy import deepcopy
 from pprint import pprint, pformat
@@ -826,7 +825,7 @@ class MAAFAgent(Node):
             # self.environment["all_pairs_shortest_paths"] = dict(nx.floyd_warshall(self.environment["graph"]))
             # self.get_logger().info(f"         > {self}: Received environment update: Done computing all shortest paths")
 
-            self.compute_shortest_paths()
+            self.__compute_shortest_paths()
 
             self.get_logger().info(f"         < Received environment update")
 
@@ -849,9 +848,9 @@ class MAAFAgent(Node):
         # -> Call environment update listeners
         self.call_on_env_update_listeners(environment=self.environment)
 
-    def compute_shortest_paths(self):
+    def __compute_shortest_paths(self):
         # -> Retrieve path from scenario ID
-        shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Parsed_maps/{self.scenario.scenario_id.split('_')[1]}_shortest_paths.json"
+        shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Parsed_maps/{self.scenario.scenario_id.split('_')[1]}_{self.scenario.scenario_id.split('_')[2]}_shortest_paths.json"
 
         # -> If path exists, parse it
         if os.path.exists(shortest_paths_path):
@@ -896,11 +895,26 @@ class MAAFAgent(Node):
 
                     # > Record path from source to task node
                     if source_node not in self.environment["all_pairs_shortest_paths"].keys():
-                        self.environment["all_pairs_shortest_paths"][str(source_node)] = {}
+                        self.environment["all_pairs_shortest_paths"][source_node] = {}
 
-                    self.environment["all_pairs_shortest_paths"][str(source_node)][str(task_node)] = path
+                    self.environment["all_pairs_shortest_paths"][source_node][task_node] = path
 
             self.get_logger().info(f"         > {self}: Done computing all shortest paths")
+
+            # # -> Cache results to file
+            # with open(shortest_paths_path, "w") as f:
+            #     all_pairs_shortest_paths = {str(k): {str(k2): v2 for k2, v2 in v.items()} for k, v in self.environment["all_pairs_shortest_paths"].items()}
+            #     f.write(dumps(all_pairs_shortest_paths))
+            #
+            #     print(f"Saved shortest paths to file: {self.scenario.scenario_id}")
+
+            # # TODO: Clean up, added to load from file for type compatibility
+            # with open(shortest_paths_path, "r") as f:
+            #     all_pairs_shortest_paths = loads(f.read())
+            # self.environment["all_pairs_shortest_paths"] = {eval(k): {eval(k2): v2 for k2, v2 in v.items()} for
+            #                                                 k, v in all_pairs_shortest_paths.items()}
+
+            self.get_logger().info(f"         > {self}: Loaded shortest paths from file")
 
     def __pose_subscriber_callback(self, pose_msg) -> None:
         """

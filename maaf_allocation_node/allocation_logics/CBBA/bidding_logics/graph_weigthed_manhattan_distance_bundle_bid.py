@@ -136,9 +136,9 @@ def graph_weighted_manhattan_distance_bundle_bid(
                     # -> Get nodes position
                     # > Source node
                     if source_node in fleet:
-                        source_node_loc = (fleet[source_node].state.x, fleet[source_node].state.y)  # TODO: SET AS AGENT NODE
+                        source_node_loc = (int(fleet[source_node].state.x), int(fleet[source_node].state.y))  # TODO: SET AS AGENT NODE
                     else:
-                        source_node_loc = (tasklog[source_node].instructions["x"], tasklog[source_node].instructions["y"])
+                        source_node_loc = (int(tasklog[source_node].instructions["x"]), int(tasklog[source_node].instructions["y"]))    # TODO: Check typing if using continuous parameters
 
                     # > Target node
                     if target_node in fleet:
@@ -147,6 +147,9 @@ def graph_weighted_manhattan_distance_bundle_bid(
                         target_node_loc = (tasklog[target_node].instructions["x"], tasklog[target_node].instructions["y"])
 
                     # -> Find the weigthed Manhattan distance between the agent and the task
+                    # logger.info(f"Path from {source_node_loc} to {target_node_loc}")
+                    # logger.info(f"Nodes: {environment['all_pairs_shortest_paths'].keys()}")
+                    # logger.info(f'{source_node_loc}->{target_node_loc}, {environment["all_pairs_shortest_paths"][source_node_loc].keys()}')
                     path = environment["all_pairs_shortest_paths"][source_node_loc][target_node_loc]
                     # path = nx.shortest_path(environment["graph"], agent_node, task_node)
                     # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")

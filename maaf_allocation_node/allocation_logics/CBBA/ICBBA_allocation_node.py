@@ -9,7 +9,6 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 import os
 import time
 from random import randint
-from json import dumps, loads
 from typing import List, Optional, Tuple
 from copy import deepcopy
 from datetime import datetime
@@ -307,9 +306,7 @@ class ICBBANode(ICBAgent):
 
             # -> Cancel goal if task is assigned to self
             elif task.id in self.agent.plan:
-                self.get_logger().info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! a Agent {self.id}: Task {task.id} terminated ({self.agent.plan})")
                 self._drop_task(task_id=task.id, reset=True, forward=True, motive="termination")
-                self.get_logger().info(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! b Agent {self.id}: Task {task.id} terminated ({self.agent.plan})")
 
             # -> Remove task from all allocation lists and matrices
             state = self.get_state(
@@ -858,9 +855,6 @@ class ICBBANode(ICBAgent):
         :param traceback: The reason for dropping the task
         """
 
-        if self.id == "Turtle_4":
-            self.get_logger().info(f"Agent {self.id}: Dropping {task_id} requested")
-
         if reset:
             # > Reset winning bids
             self.winning_bids_y.loc[task_id, "winning_bids_y"] = 0
@@ -880,9 +874,6 @@ class ICBBANode(ICBAgent):
                 self.winning_agents_k.loc[task_dropped_id, "winning_agents_k"] = ""
 
         # > Remove the task from the plan
-        if self.id == "Turtle_4":
-            self.get_logger().info(f"Agent {self.id}: removing {task_id} from current {self.agent.plan}")
-
         self.agent.remove_task_from_plan(
             tasklog=self.tasklog,
             task=task_id,
@@ -890,8 +881,6 @@ class ICBBANode(ICBAgent):
             motive=motive,
             logger=self.get_logger() if logger else None
         )
-        if self.id == "Turtle_4":
-            self.get_logger().info(f"Agent {self.id}: Removed {task_id} to get {self.agent.plan}")
 
         # > Publish goal msg
         self.publish_goal_msg(meta_action="update", traceback=traceback)

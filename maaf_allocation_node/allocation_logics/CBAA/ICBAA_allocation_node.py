@@ -9,7 +9,6 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 import os
 import time
 from random import randint
-from json import dumps, loads
 from typing import List, Optional, Tuple
 from copy import deepcopy
 from datetime import datetime

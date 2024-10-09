@@ -9,7 +9,6 @@ This module contains the MAAF allocation node class, which is a ROS2 node that i
 import os
 import time
 from random import randint
-from json import dumps, loads
 from typing import List, Optional, Tuple
 from copy import deepcopy
 from datetime import datetime
@@ -172,8 +171,8 @@ class ICBAgent(MAAFAgent):
 
         # self.get_logger().info(f">>>>>>>>>>>>>>>>>>>>>>>>>> {self.id} - Task {task.id} added to tasklog: {success}")
 
-        if self.id == "Turtle_4":
-            self.get_logger().info(f"\n{self.tasklog.pretty_table}")
+        # if self.id == "Turtle_4":
+        #     self.get_logger().info(f"\n{self.tasklog.pretty_table}")
 
         task_state_change, fleet_state_change = self.update_situation_awareness(tasklog=tasklog, fleet=None)
 
