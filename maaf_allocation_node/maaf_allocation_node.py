@@ -16,8 +16,13 @@ from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy
 
 
 # Local Imports
-from .allocation_logics.CBAA.ICBAA_allocation_node import ICBAANode
-from .allocation_logics.CBBA.ICBBA_allocation_node import ICBBANode
+try:
+    from maaf_allocation_node.allocation_logics.CBAA.ICBAA_allocation_node import ICBAANode
+    from maaf_allocation_node.allocation_logics.CBBA.ICBBA_allocation_node import ICBBANode
+
+except ImportError:
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBAA.ICBAA_allocation_node import ICBAANode
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.ICBBA_allocation_node import ICBBANode
 
 
 ##################################################################################################################

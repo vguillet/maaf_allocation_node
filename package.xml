@@ -11,7 +11,6 @@
   <exec_depend>maaf_msgs</exec_depend>
   <exec_depend>orchestra_config</exec_depend>
   <exec_depend>rlb_simple_sim</exec_depend>
-  <exec_depend>maaf_allocation_node</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
