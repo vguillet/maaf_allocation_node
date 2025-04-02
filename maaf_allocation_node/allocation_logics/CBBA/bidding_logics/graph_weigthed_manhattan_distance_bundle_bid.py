@@ -55,7 +55,7 @@ def graph_weighted_manhattan_distance_bundle_bid(
 
     # ----- Self parameters
     :param task: The task to calculate the marginal gains for.
-    :param agent_lst: The list of agents to calculate the bid from.
+    :param agent_lst: The list of agents to calculate the bid for.
     :param logger: The logger to log messages to.
 
     # ----- States

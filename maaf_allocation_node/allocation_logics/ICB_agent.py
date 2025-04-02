@@ -14,8 +14,7 @@ from abc import ABC, abstractmethod
 
 # Local Imports
 try:
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.sim_config import *
+    from maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
     from maaf_allocation_node.maaf_agent import MAAFAgent
@@ -30,8 +29,7 @@ try:
     from maaf_tools.tools import *
 
 except ModuleNotFoundError:
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.orchestra_config.sim_config import *
+    from maaf_config.maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
     from maaf_allocation_node.maaf_allocation_node.maaf_agent import MAAFAgent
@@ -66,16 +64,16 @@ class ICBAgent(MAAFAgent):
             bid_estimator=bid_estimator
         )
 
-        # ---------- epoch
-        self.sim_epoch_sub = self.create_subscription(
-            msg_type=TeamCommStamped,
-            topic=topic_epoch,
-            callback=self.sim_epoch_callback,
-            qos_profile=qos_sim_epoch
-        )
+        # # ---------- epoch
+        # self.sim_epoch_sub = self.create_subscription(
+        #     msg_type=TeamCommStamped,
+        #     topic=topic_epoch,
+        #     callback=self.sim_epoch_callback,
+        #     qos_profile=qos_sim_epoch
+        # )
 
         # ---------- Recompute
-        if self.scenario.recompute_bids_on_state_change:
+        if self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change"):
             def recompute_on_pose_update():
                 if self.agent.plan.current_task_id is not None:
                     # -> Drop current task
@@ -91,8 +89,8 @@ class ICBAgent(MAAFAgent):
 
             self.add_on_pose_update_listener(recompute_on_pose_update)
 
-    def sim_epoch_callback(self, msg: TeamCommStamped):
-        sim_state = loads(msg.memo)
+    # def sim_epoch_callback(self, msg: TeamCommStamped):
+    #     sim_state = loads(msg.memo)
 
     # ============================================================== PROPERTIES
 
@@ -162,7 +160,10 @@ class ICBAgent(MAAFAgent):
         task_state_change, fleet_state_change = self.update_situation_awareness(tasklog=tasklog, fleet=None)
 
         # -> Select task
-        self.update_allocation(reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change)   # TODO: Cleanup
+        self.update_allocation(
+            reset_assignment=task_state_change and
+            self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change")
+        )
 
         # -> Update previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
@@ -190,7 +191,7 @@ class ICBAgent(MAAFAgent):
             # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
             return
 
-        # -> Deserialise allocation state
+        # -> Deserialize allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
 
         # -> Update local situation awareness
@@ -231,7 +232,8 @@ class ICBAgent(MAAFAgent):
 
         # ----- Update allocation
         self.update_allocation(
-            reset_assignment=task_state_change and self.scenario.recompute_bids_on_state_change,    # TODO: Cleanup
+            reset_assignment=task_state_change and
+                             self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change"),
             agent=received_agent,
             **received_allocation_state
         )

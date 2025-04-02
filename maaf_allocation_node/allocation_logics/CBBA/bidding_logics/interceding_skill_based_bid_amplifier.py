@@ -51,7 +51,8 @@ def interceding_skill_based_bid_amplifier(
         shared_bids_b,
         shared_bids_priority_beta,
 
-        interventionism: float,
+        # > Parameters
+        interventionism: float = 1.,
         *args,
         **kwargs
         ) -> (list[dict], dict):
@@ -70,6 +71,8 @@ def interceding_skill_based_bid_amplifier(
     :param fleet: The fleet of agents.
     :param shared_bids_b: The shared bids for the agents.
     :param shared_bids_priority_beta: The priority shared bids for the agents.
+
+
     """
 
     # -> Check if task intervention has been established

@@ -16,8 +16,7 @@ import pandas as pd
 
 # Local Imports
 try:
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.sim_config import *
+    from maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
     from maaf_allocation_node.maaf_agent import MAAFAgent
@@ -37,8 +36,7 @@ try:
     from .update_logics.CBBA_update_decisions import _update_decision
 
 except ModuleNotFoundError:
-    from orchestra_config.orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.orchestra_config.sim_config import *
+    from maaf_config.maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
     from maaf_allocation_node.maaf_allocation_node.maaf_agent import MAAFAgent
@@ -575,48 +573,47 @@ class ICBBANode(ICBAgent):
         #     self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
         #     self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
 
-        # -------------------------------- Interceding agent logic
-        if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-            # -> Compute new bids
-            for task in self.tasklog.tasks_pending:
-                self._bid(task=task, agent_lst=self.fleet.agents_active)
-
-            # -> Update b
-            for task in self.tasklog.tasks_pending:
-                for agent in self.fleet.agents_active:
-                    # > Determine correct matrix values
-                    if self.local_bids_c.loc[task.id, agent.id] > 0:
-                        shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
-                            # Logging
-                            task_id=task.id,
-                            agent_id=agent.id,
-
-                            # Merging
-                            matrix_updated_ij=self.shared_bids_b.loc[task.id, agent.id],
-                            matrix_source_ij=self.local_bids_c.loc[task.id, agent.id],
-                            priority_updated_ij=self.shared_bids_priority_beta.loc[task.id, agent.id],
-                            priority_source_ij=self.hierarchy_level,
-
-                            # Reset
-                            currently_assigned=None,
-                            reset=False
-                        )
-
-                        # > Update local states
-                        self.shared_bids_b.loc[task.id, agent.id] = shared_bids_b_ij_updated
-                        self.shared_bids_priority_beta.loc[task.id, agent.id] = shared_bids_priority_beta_ij_updated
+        # # -------------------------------- Interceding agent logic
+        # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
+        #     # -> Compute new bids
+        #     for task in self.tasklog.tasks_pending:
+        #         self._bid(task=task, agent_lst=self.fleet.agents_active)
+        #
+        #     # -> Update b
+        #     for task in self.tasklog.tasks_pending:
+        #         for agent in self.fleet.agents_active:
+        #             # > Determine correct matrix values
+        #             if self.local_bids_c.loc[task.id, agent.id] > 0:
+        #                 shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
+        #                     # Logging
+        #                     task_id=task.id,
+        #                     agent_id=agent.id,
+        #
+        #                     # Merging
+        #                     matrix_updated_ij=self.shared_bids_b.loc[task.id, agent.id],
+        #                     matrix_source_ij=self.local_bids_c.loc[task.id, agent.id],
+        #                     priority_updated_ij=self.shared_bids_priority_beta.loc[task.id, agent.id],
+        #                     priority_source_ij=self.hierarchy_level,
+        #
+        #                     # Reset
+        #                     currently_assigned=None,
+        #                     reset=False
+        #                 )
+        #
+        #                 # > Update local states
+        #                 self.shared_bids_b.loc[task.id, agent.id] = shared_bids_b_ij_updated
+        #                 self.shared_bids_priority_beta.loc[task.id, agent.id] = shared_bids_priority_beta_ij_updated
 
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
-            # TODO: Cleanup once interceding agents are not the same as base agents
-            interceding_agent = False
-            if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-                interceding_agent = True
-                self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-                self.agent.hierarchy_level = 0
-                self.hierarchy_level = 0
-            #  TODO: --------------------------------------------------------------
+            # # TODO: Cleanup once interceding agents are not the same as base agents
+            # interceding_agent = False
+            # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
+            #     interceding_agent = True
+            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
+            #     self.agent.hierarchy_level = 0
+            #     self.hierarchy_level = 0
 
             while len(self.agent.plan) < len(self.tasklog.tasks_pending):
                 # -> Calculate bids
@@ -625,12 +622,19 @@ class ICBBANode(ICBAgent):
 
                 # > For each task not in the plan ...
                 for task in remaining_tasks:
+                    #
+                    # TODO: H-CBBA - Determine list of agents to bid for based on organisation
                     # -> Compute bids
-                    self._bid(task=task, agent_lst=[self.agent])   # TODO: Review to better integrate intercession
+                    self._bid(task=task, agent_lst=[self.agent])
 
                 # -> Merge local bids c into shared bids b
                 # > For each task ...
                 for task_id in self.tasklog.ids_pending:
+                    # TODO: H-CBBA - Determine hierarchy level based on organisation (group affiliation/role and higher level task allocation)
+                    group_id = ""
+
+                    hierarchy_level = self.organisation.allocation_specification.get_hierarchy_level(agent_id=self.id, group_id=group_id)
+
                     # > For each agent ...
                     for agent_id in self.fleet.ids_active:
                         # -> Priority merge local bids c into current bids b
@@ -645,7 +649,7 @@ class ICBBANode(ICBAgent):
                                 matrix_updated_ij=self.shared_bids_b.loc[task_id, agent_id],
                                 matrix_source_ij=self.local_bids_c.loc[task_id, agent_id],
                                 priority_updated_ij=self.shared_bids_priority_beta.loc[task_id, agent_id],
-                                priority_source_ij=self.hierarchy_level,
+                                priority_source_ij=hierarchy_level,
 
                                 # Reset
                                 currently_assigned=None,
@@ -661,7 +665,7 @@ class ICBBANode(ICBAgent):
                                 self.local_bids_c.loc[task_id, agent_id] = self.shared_bids_b.loc[task_id, agent_id]
 
                         # -> Merge local intercessions into allocation intercession
-                        if self.hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
+                        if hierarchy_level > self.shared_allocations_priority_alpha.loc[task_id, agent_id]:
                             allocation_state = self.action_to_allocation_state(
                                 action=self.local_allocations_d.loc[task_id, agent_id]
                             )
@@ -741,12 +745,11 @@ class ICBBANode(ICBAgent):
                 else:
                     break
 
-            # TODO: Cleanup once interceding agents are not the same as base agents
-            if interceding_agent:
-                self.bid_evaluation_function = interceding_skill_based_bid_amplifier
-                self.agent.hierarchy_level = 1
-                self.hierarchy_level = 1
-            # TODO: ---------------------------------------------------------------
+            # # TODO: Cleanup once interceding agents are not the same as base agents
+            # if interceding_agent:
+            #     self.bid_evaluation_function = interceding_skill_based_bid_amplifier
+            #     self.agent.hierarchy_level = 1
+            #     self.hierarchy_level = 1
 
         # ---- Update local states
         if agent is not None and last_update_s is not None:
@@ -773,17 +776,21 @@ class ICBBANode(ICBAgent):
             self.get_logger().warning("!!!!!! WARNING: Environment not available")
             return []
 
+        # -> Get bid evaluation function from task and role
+        bid_evaluation_function = self.organisation.allocation_specification.get_task_bidding_logic(task_id=task.id)
+
         # -> If no bid evaluation function, return empty list
-        if self.bid_evaluation_function is None:
+        if bid_evaluation_function is None:
+            self.get_logger().warning(f"!!!!!! WARNING: No bid evaluation function for task {task.id}")
             return []
 
         # -> Compute the marginal gains for the agent
-        task_bids, bids_cache = self.bid_evaluation_function(
+        task_bids, bids_cache = bid_evaluation_function(
             # > Self parameters
-            self_agent=self.agent,
+            self_agent_id=self.id,
             task=task,
             agent_lst=agent_lst,
-            intercession_targets=self.scenario.intercession_targets,
+            # intercession_targets=self.scenario.intercession_targets,    # TODO: Replace with method which determines intercession targets based on task and roles
             logger=self.get_logger(),
 
             # > States
@@ -795,7 +802,7 @@ class ICBBANode(ICBAgent):
                 serialised=False
             ),
             bids_cache=self.bids_cache,
-            interventionism=self.scenario.interventionism
+            # interventionism=self.scenario.interventionism
         )
 
         # -> Merge the marginal gains cache

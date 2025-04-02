@@ -41,8 +41,7 @@ from geometry_msgs.msg import Twist, PoseStamped, Point
 try:
     from rlb_simple_sim.Scenario import Scenario
 
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.sim_config import *
+    from maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 
@@ -53,6 +52,8 @@ try:
     from maaf_tools.datastructures.agent.Agent import Agent
     from maaf_tools.datastructures.agent.AgentState import AgentState
     from maaf_tools.datastructures.agent.Plan import Plan
+
+    from maaf_tools.datastructures.organisation.Organisation import Organisation
 
     from maaf_tools.tools import *
     from maaf_tools.Singleton import SLogger
@@ -68,8 +69,7 @@ try:
 except ModuleNotFoundError:
     from rlb_simple_sim.rlb_simple_sim.Scenario import Scenario
 
-    from orchestra_config.orchestra_config import *  # KEEP THIS LINE, DO NOT REMOVE
-    from orchestra_config.orchestra_config.sim_config import *
+    from maaf_config.maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
 
@@ -80,6 +80,8 @@ except ModuleNotFoundError:
     from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
     from maaf_tools.maaf_tools.datastructures.agent.AgentState import AgentState
     from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
+
+    from maaf_tools.maaf_tools.datastructures.organisation.Organisation import Organisation
 
     from maaf_tools.maaf_tools.tools import *
     from maaf_tools.maaf_tools.Singleton import SLogger
@@ -122,19 +124,6 @@ class MAAFAgent(Node):
         logger = SLogger()
         logger.logger = self.get_logger()
 
-        # TODO: Clean up
-        # -> Get launch parameters configuration
-        self.declare_parameters(
-            namespace="",
-            parameters=[
-                ("scenario_id", "Scenario_0_full_intercession_no_recompute_0_interventionism_0.json"),
-            ]
-        )
-
-        scenario_id = self.get_parameter("scenario_id").get_parameter_value().string_value
-
-        self.scenario = Scenario(scenario_id=scenario_id, load_only=True, logger=self.get_logger())
-
         # ---- Agent properties
         # > declare all parameters at once
         self.declare_parameters(namespace="", parameters=[("id", ""), ("name", "")])
@@ -144,62 +133,6 @@ class MAAFAgent(Node):
         else:
             self.id = id
 
-        if name is None:
-            self.name = self.get_parameter("name").get_parameter_value().string_value
-        else:
-            self.name = name
-
-        # TODO: Implement local loading of configs
-        self.agent_class = "Base"
-        self.hierarchy_level = 0
-        self.affiliations = []
-        self.specs = {}
-
-        if skillset is None:
-            # self.skillset = self.get_parameter("skillset").get_parameter_value().string_array_value
-            # TODO: Cleanup
-            self.skillset = self.scenario.fleet_skillsets[self.id]
-        else:
-            self.skillset = skillset
-
-        if visibility_range is None:
-            try:
-                self.visibility_range = self.scenario.visibility_ranges[self.id]
-            except:
-                self.visibility_range = 0
-        else:
-            self.visibility_range = visibility_range
-
-        # ---- Bid evaluation function
-        if bid_estimator is None:
-            self.bid_evaluation_function = None
-        elif bid_estimator is not None:
-            self.bid_evaluation_function = bid_estimator
-
-        # TODO: Cleanup
-        if self.id in self.scenario.fleet_bids_mechanisms.keys():
-            if self.scenario.fleet_bids_mechanisms[self.id] == "graph_weighted_manhattan_distance_bid":
-                # > Set hierarchy level
-                self.hierarchy_level = 0
-
-                # > Set bid evaluation function
-                if self.__class__.__name__ == "ICBAANode":
-                    self.bid_evaluation_function = graph_weighted_manhattan_distance_bid           # CBAA
-
-                elif self.__class__.__name__ == "ICBBANode":
-                    self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid    # CBBA
-
-            elif self.scenario.fleet_bids_mechanisms[self.id] == "anticipated_action_task_interceding_agent":
-                # > Set hierarchy level
-                self.hierarchy_level = 1
-
-                # > Set bid evaluation function
-                if self.__class__.__name__ == "ICBAANode":
-                    self.bid_evaluation_function = anticipated_action_task_interceding_agent       # CBAA
-
-                elif self.__class__.__name__ == "ICBBANode":
-                    self.bid_evaluation_function = interceding_skill_based_bid_amplifier           # CBBA
-
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
 
@@ -207,6 +140,8 @@ class MAAFAgent(Node):
         self.environment = None
 
         # ---- Fleet and task log
+        self.fleet = None
+        self.organisation = None
         self.__setup_fleet_and_tasklog()
 
         # ---- Listeners
@@ -229,9 +164,8 @@ class MAAFAgent(Node):
         # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
         self.get_logger().info(f"\n> Agent {self.id} initialised: " +
-                               f"\n     Hierarchy level: {self.hierarchy_level}" +
-                               f"\n     Skillset: {self.skillset}" +
-                               f"\n     Bid evaluation: {self.bid_evaluation_function}\n"
+                               #f"\n     Hierarchy level: {self.hierarchy_level}" +
+                               f"\n     Skillset: {self.agent.skillset}"
                                )
 
     # ============================================================== INIT
@@ -241,43 +175,19 @@ class MAAFAgent(Node):
         Fleet dict of size N_a
         Agents ids are obtained using the self.id_card property
         """
-        # -> Create fleet object
-        self.fleet = Fleet()
 
-        # # -> Fill with initial data
-        # # > Retrieve initial fleet data from parameters
-        # fleet_data = []
-        #
-        # > Add initial fleet data to the fleet object
-        # self.fleet.from_dict(maaflist_dict=fleet_data)
+        # -> Load organisation
+        self.organisation = Organisation.load_from_file(filename=organisation_file_path, partial=False)
 
-        # -> Check if self is in the fleet, if not, add self to the fleet
+        # -> Extract fleet object
+        self.fleet = self.organisation.fleet.clone()
+
+        # -> Remove fleet from organisation to avoid data duplication
+        self.organisation.fleet = None
+
+        # -> Check if self is in the fleet
         if self.id not in self.fleet.ids:
-            self.fleet.add_item(
-                Agent(
-                    id=self.id,
-                    name=self.name,
-                    agent_class=self.agent_class,
-                    hierarchy_level=self.hierarchy_level,
-                    affiliations=self.affiliations,
-                    specs=self.specs,
-                    skillset=self.skillset,
-                    # TODO: Implement state init
-                    state=AgentState(
-                        agent_id=self.id,
-                        _timestamp=self.current_timestamp,
-                        battery_level=100,
-                        stuck=False,
-                        x=0,
-                        y=0,
-                        z=0,
-                        u=0,
-                        v=0,
-                        w=0
-                    ),
-                    plan=Plan()
-                )
-            )
+            raise ValueError(f"Agent {self.id} not in fleet. Please check the organisation file.")
 
         # -> Set get_timestamp method
         def get_timestamp():
@@ -687,6 +597,7 @@ class MAAFAgent(Node):
         """
         Main getter for node states. Returns a dict of all requested states, serialised or not
 
+        :param environment: bool, whether to include environment state
         :param state_awareness: bool, whether to include state awareness
         :param local_allocation_state: bool, whether to include local allocation state
         :param shared_allocation_state: bool, whether to include shared allocation state
@@ -725,7 +636,7 @@ class MAAFAgent(Node):
                 serialised_state = {}
 
                 for key, value in self.local_allocation_state.items():
-                    serialised_state[key] = value.to_dict()
+                    serialised_state[key] = value.asdict()
 
                 state = {**state, **serialised_state}
 
@@ -753,9 +664,10 @@ class MAAFAgent(Node):
         """
         return {
             "tasklog": self.tasklog,
-            "fleet": self.fleet
+            "fleet": self.fleet,
+            "organisation": self.organisation
         }
-    
+
     @property
     def shared_allocation_state(self):
         """
