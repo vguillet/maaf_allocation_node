@@ -92,7 +92,7 @@ except ModuleNotFoundError:
 
     # > CBBA
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
-    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import graph_weighted_manhattan_distance_bundle_bid
 
 ##################################################################################################################
 
@@ -177,7 +177,10 @@ class MAAFAgent(Node):
         """
 
         # -> Load organisation
-        self.organisation = Organisation.load_from_file(filename=organisation_file_path, partial=False)
+        self.organisation = Organisation.load_from_file(
+            filename=organisation_file_path, # TODO: Monte Carlo - Change to ROS parameters
+            partial=False
+        )
 
         # -> Extract fleet object
         self.fleet = self.organisation.fleet.clone()
@@ -738,6 +741,9 @@ class MAAFAgent(Node):
             # nx.draw(self.environment["graph"], pos=self.environment["pos"])
             # plt.show()
 
+            # -> Reset allocation states
+            self.reset_allocation_states()  # TODO: Review for efficiency
+
             # -> Recompute local bids for all tasks
             for task in self.tasklog.tasks_pending:
                 task_bids = self._bid(task, [self.agent])
@@ -755,6 +761,7 @@ class MAAFAgent(Node):
 
     def __compute_shortest_paths(self):
         # -> Retrieve path from scenario ID
+        # TODO: Change to generic path
         shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Parsed_maps/{self.scenario.scenario_id.split('_')[1]}_{self.scenario.scenario_id.split('_')[2]}_shortest_paths.json"
 
         # -> If path exists, parse it
@@ -770,6 +777,9 @@ class MAAFAgent(Node):
         else:
             self.get_logger().info(f"         > {self}: Computing all shortest paths...")
             # self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
+
+            # -> Compute the shortest path from all nodes to all nodes
+            # TODO: H-CBBA - Integrate environment graph in the algorithm
 
             # -> List all task nodes from scenario
             task_node_locs = [[goto_task["instructions"]["x"], goto_task["instructions"]["y"]] for goto_task in self.scenario.goto_tasks]

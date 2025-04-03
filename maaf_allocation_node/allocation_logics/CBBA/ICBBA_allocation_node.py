@@ -52,7 +52,7 @@ except ModuleNotFoundError:
     from maaf_tools.maaf_tools.tools import *
 
     from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
-    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+    from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import graph_weighted_manhattan_distance_bundle_bid
     from .update_logics.CBBA_update_decisions import _update_decision
 
 ##################################################################################################################

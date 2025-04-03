@@ -11,13 +11,23 @@ RUN CONTEXT: Simulation
 # Libs
 
 # Own modules
-from maaf_tools.datastructures.task.Task import Task
-from maaf_tools.datastructures.task.TaskLog import TaskLog
+try:
+    from maaf_tools.datastructures.task.Task import Task
+    from maaf_tools.datastructures.task.TaskLog import TaskLog
 
-from maaf_tools.datastructures.agent.Agent import Agent
-from maaf_tools.datastructures.agent.Fleet import Fleet
+    from maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.datastructures.agent.Fleet import Fleet
 
-from maaf_tools.tools import *
+    from maaf_tools.tools import *
+
+except ModuleNotFoundError:
+    from maaf_tools.maaf_tools.datastructures.task.Task import Task
+    from maaf_tools.maaf_tools.datastructures.task.TaskLog import TaskLog
+
+    from maaf_tools.maaf_tools.datastructures.agent.Agent import Agent
+    from maaf_tools.maaf_tools.datastructures.agent.Fleet import Fleet
+
+    from maaf_tools.maaf_tools.tools import *
 
 ##################################################################################################################
 
