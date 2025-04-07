@@ -32,10 +32,11 @@ try:
     from maaf_tools.tools import *
 
     from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
-    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import GraphWeightedManhattanDistanceBundleBid
     from .update_logics.CBBA_update_decisions import _update_decision
 
-except ModuleNotFoundError:
+except ModuleNotFoundError as e:
+    warnings.warn(f"Module not found: {e}. Please check your imports.")
     from maaf_config.maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation

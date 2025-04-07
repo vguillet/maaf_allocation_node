@@ -27,6 +27,7 @@ import warnings
 from copy import deepcopy
 
 # Libs
+from pprint import pformat
 
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -39,8 +40,6 @@ from geometry_msgs.msg import Twist, PoseStamped, Point
 
 # Local Imports
 try:
-    from rlb_simple_sim.Scenario import Scenario
-
     from maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
@@ -54,6 +53,7 @@ try:
     from maaf_tools.datastructures.agent.Plan import Plan
 
     from maaf_tools.datastructures.organisation.Organisation import Organisation
+    from maaf_tools.datastructures.environment.Environment import Environment
 
     from maaf_tools.tools import *
     from maaf_tools.Singleton import SLogger
@@ -64,11 +64,10 @@ try:
 
     # > CBBA
     from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.interceding_skill_based_bid_amplifier import interceding_skill_based_bid_amplifier
-    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.graph_weigthed_manhattan_distance_bundle_bid import graph_weighted_manhattan_distance_bundle_bid
+    from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import GraphWeightedManhattanDistanceBundleBid
 
-except ModuleNotFoundError:
-    from rlb_simple_sim.rlb_simple_sim.Scenario import Scenario
-
+except ModuleNotFoundError as e:
+    warnings.warn(f"Module not found: {e}. Please check your imports.")
     from maaf_config.maaf_config.maaf_config import *
 
     from maaf_msgs.msg import TeamCommStamped, Bid, Allocation
@@ -82,6 +81,7 @@ except ModuleNotFoundError:
     from maaf_tools.maaf_tools.datastructures.agent.Plan import Plan
 
     from maaf_tools.maaf_tools.datastructures.organisation.Organisation import Organisation
+    from maaf_tools.maaf_tools.datastructures.environment.Environment import Environment
 
     from maaf_tools.maaf_tools.tools import *
     from maaf_tools.maaf_tools.Singleton import SLogger
@@ -126,12 +126,17 @@ class MAAFAgent(Node):
 
         # ---- Agent properties
         # > declare all parameters at once
-        self.declare_parameters(namespace="", parameters=[("id", ""), ("name", "")])
+        self.declare_parameters(namespace="", parameters=[("id", "")])
 
         if id is None:
             self.id = self.get_parameter("id").get_parameter_value().string_value
         else:
             self.id = id
+
+        # -> Check that id is not None
+        if self.id == "":
+            raise ValueError("Agent id parameter not set (must be set in a launch file or in the constructor)")
+
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -157,7 +162,6 @@ class MAAFAgent(Node):
 
         # ---- Allocation states
         self.__setup_allocation_base_states()
-        # self._setup_allocation_additional_states()
 
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = None
@@ -182,8 +186,12 @@ class MAAFAgent(Node):
             partial=False
         )
 
+        self.get_logger().info(f"\n> Agent {self.id} initialised: {pformat(self.organisation)}")
+
         # -> Extract fleet object
         self.fleet = self.organisation.fleet.clone()
+
+        self.get_logger().info(f"\n> Agent {self.id} initialised: {self.fleet}")
 
         # -> Remove fleet from organisation to avoid data duplication
         self.organisation.fleet = None
@@ -724,16 +732,13 @@ class MAAFAgent(Node):
             sys.exit()
 
     def __env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
-        if self.environment is None:    # TODO: Review environment management logic
+        if self.environment is None:
 
-            self.environment = json_to_graph(graph_json=msg.memo)
+            self.environment = Environment.from_json(json_str=msg.memo)
 
-            # self.get_logger().info(f"         > {self}: Received environment update: Computing all shortest paths using floyd_warshall...")
-            #self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
-            # self.environment["all_pairs_shortest_paths"] = dict(nx.floyd_warshall(self.environment["graph"]))
-            # self.get_logger().info(f"         > {self}: Received environment update: Done computing all shortest paths")
-
-            self.__compute_shortest_paths()
+            self.get_logger().info(f"         > {self}: Received environment update: Computing all shortest paths missing...")
+            self.environment.compute_all_shortest_paths(recompute_all_shortest_paths=False)
+            self.get_logger().info(f"         > {self}: Received environment update: Done computing all shortest paths")
 
             self.get_logger().info(f"         < Received environment update")
 
