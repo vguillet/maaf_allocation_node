@@ -186,12 +186,8 @@ class MAAFAgent(Node):
             partial=False
         )
 
-        self.get_logger().info(f"\n> Agent {self.id} initialised: {pformat(self.organisation)}")
-
         # -> Extract fleet object
         self.fleet = self.organisation.fleet.clone()
-
-        self.get_logger().info(f"\n> Agent {self.id} initialised: {self.fleet}")
 
         # -> Remove fleet from organisation to avoid data duplication
         self.organisation.fleet = None
@@ -624,7 +620,7 @@ class MAAFAgent(Node):
                 state["environment"] = self.environment
             else:
                 try:
-                    state["environment"] = graph_to_json(graph=self.environment["graph"], pos=self.environment["pos"])
+                    state["environment"] = self.environment.to_json()
                 except:
                     state["environment"] = None
 
@@ -647,7 +643,10 @@ class MAAFAgent(Node):
                 serialised_state = {}
 
                 for key, value in self.local_allocation_state.items():
-                    serialised_state[key] = value.asdict()
+                    if isinstance(value, pd.DataFrame):
+                        serialised_state[key] = value.to_dict(orient="split")
+                    else:
+                        serialised_state[key] = value.asdict()
 
                 state = {**state, **serialised_state}
 
