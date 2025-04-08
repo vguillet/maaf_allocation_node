@@ -65,25 +65,25 @@ class BiddingLogic(ABC):
             bids_cache = bound_args.arguments.get("bids_cache")
 
             if not isinstance(task, Task):
-                raise TypeError("Parameter 'task' must be an instance of Task.")
+                raise TypeError(f"Parameter 'task' must be an instance of Task (task = {task}).")
 
             if not isinstance(agent_lst, list):
-                raise TypeError("Parameter 'agent_lst' must be a list of Agent instances.")
+                raise TypeError(f"Parameter 'agent_lst' must be a list of Agent instances (agent_lst = {agent_lst}).")
             for agent in agent_lst:
                 if not isinstance(agent, Agent):
-                    raise TypeError("Each element in 'agent_lst' must be an instance of Agent.")
+                    raise TypeError(f"Each element in 'agent_lst' must be an instance of Agent (agent = {agent}).")
 
             if not isinstance(fleet, Fleet):
-                raise TypeError("Parameter 'fleet' must be an instance of Fleet.")
+                raise TypeError(f"Parameter 'fleet' must be an instance of Fleet (fleet = {fleet}).")
 
             if not isinstance(organisation, Organisation):
-                raise TypeError("Parameter 'organisation' must be an instance of Organisation.")
+                raise TypeError(f"Parameter 'organisation' must be an instance of Organisation (organisation = {organisation}).")
 
             if not isinstance(tasklog, TaskLog):
-                raise TypeError("Parameter 'tasklog' must be an instance of TaskLog.")
+                raise TypeError(f"Parameter 'tasklog' must be an instance of TaskLog (tasklog = {tasklog}).")
 
             if bids_cache is not None and not isinstance(bids_cache, dict):
-                raise TypeError("Parameter 'bids_cache' must be a dictionary.")
+                raise TypeError(f"Parameter 'bids_cache' must be a dictionary (bids_cache = {bids_cache}).")
 
             # Execute the original function.
             result = func(*args, **kwargs)
@@ -119,12 +119,40 @@ class BiddingLogic(ABC):
         return wrapper
 
     @verify_compute_bids
-    def __compute_bids(self, *args, **kwargs):
+    def __compute_bids(self,
+                       # > Self parameters
+                       task: Task,
+                       agent_lst: list[Agent],
+                       logger,
+
+                       # > States
+                       environment,
+                       fleet: Fleet,
+                       organisation: Organisation,
+                       tasklog: TaskLog,
+
+                       bids_cache: dict = {},
+                       *args, **kwargs
+                       ):
         """
         This is a wrapper function that calls the compute_bids method (through the monkey patched child_compute_bid).
         It is used to ensure that the compute_bids method is called with the correct parameters.
         """
-        return self.child_compute_bids(*args, **kwargs)
+        return self.child_compute_bids(
+            # > Self parameters
+            task=task,
+            agent_lst=agent_lst,
+            logger=logger,
+
+            # > States
+            environment=environment,
+            fleet=fleet,
+            organisation=organisation,
+            tasklog=tasklog,
+
+            bids_cache=bids_cache,
+            *args, **kwargs
+        )
 
     @staticmethod
     @abstractmethod

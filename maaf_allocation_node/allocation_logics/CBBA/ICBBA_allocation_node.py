@@ -483,7 +483,7 @@ class ICBBANode(ICBAgent):
         if len(agents_with_imposed_allocations) > 0:
             # > Find agent with the highest priority
             winning_agent = self.shared_allocations_priority_alpha.loc[
-                task.id, agents_with_imposed_allocations].idxmax()
+                task.id, agents_with_imposed_allocations].idxmax()  # TODO: Implement string based hierarchy
                 # TODO: Complete
 
         else:
@@ -778,7 +778,7 @@ class ICBBANode(ICBAgent):
             return []
 
         # -> Get bid evaluation function from task and role
-        bid_evaluation_function = self.organisation.allocation_specification.get_task_bidding_logic(task_id=task.id)
+        bid_evaluation_function = self.organisation.allocation_specification.get_task_bidding_logic(task_type=task.type)
 
         # -> If no bid evaluation function, return empty list
         if bid_evaluation_function is None:
@@ -880,5 +880,3 @@ class ICBBANode(ICBAgent):
 
         # > Publish goal msg
         self.publish_goal_msg(meta_action="update", traceback=traceback)
-
-    # >>>> Prints

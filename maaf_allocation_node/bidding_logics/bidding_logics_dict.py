@@ -1,9 +1,9 @@
-def lazy_import_GraphWeightedManhattanDistanceBundleBid():
+def lazy_import_GraphWeightedManhattanDistanceBundleBid(*args, **kwargs):
     try:
         from maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import GraphWeightedManhattanDistanceBundleBid
     except ImportError:
         from maaf_allocation_node.maaf_allocation_node.allocation_logics.CBBA.bidding_logics.GraphWeightedManhattanDistanceBundleBid import GraphWeightedManhattanDistanceBundleBid
-    return GraphWeightedManhattanDistanceBundleBid().compute_bids
+    return GraphWeightedManhattanDistanceBundleBid().compute_bids(*args, **kwargs)
 
 
 # def lazy_import_interceding_skill_based_bid_amplifier():

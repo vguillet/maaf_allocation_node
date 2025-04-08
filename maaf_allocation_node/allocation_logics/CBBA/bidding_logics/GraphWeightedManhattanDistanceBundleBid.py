@@ -92,8 +92,18 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
             "bid_depth": ... (0/1)
             }]
         """
+
+        logger.info(f"Calculating bids for task {task.id} ({task.type}) with {len(agent_lst)} agents.")
+
+        logger.info(f"Task instructions: {task.instructions}")
+
+        for agent in agent_lst:
+            logger.info(f"Agent {agent.id} with skillset {agent.skillset}")
+
         # -> Check the agents skillset against the task instructions
         valid_agents = get_valid_agent_list(task=task, agent_lst=agent_lst)
+
+        logger.info(f"Valid agents for task {task.id}: {[agent.id for agent in valid_agents]}")
 
         # -> Calculate the weighted Manhattan distance for all valid agents
         bids = []
@@ -274,6 +284,8 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
 
                 # -> Store in the marginal gains cache
                 bids_cache[key] = bid
+
+        logger.info(f"{bids}, {bids_cache}")
 
         return bids, bids_cache
 

@@ -185,7 +185,7 @@ class ICBAgent(MAAFAgent):
         # -> Check if the message is for the agent
         msg_target = team_msg.target
 
-        # # -> If the message is not for the agent...
+        # -> If the message is not for the agent...
         if msg_target != self.id and msg_target != "all":
             # -> Check if the agent should rebroadcast the message
             # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
@@ -194,23 +194,24 @@ class ICBAgent(MAAFAgent):
         # -> Deserialize allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
 
-        # -> Update local situation awareness
+        # ----- Update local situation awareness
         # > Convert received serialised tasklog to tasklog
         received_tasklog = TaskLog.from_dict(received_allocation_state["tasklog"])
 
         # > Convert received serialised fleet to fleet
         received_fleet = Fleet.from_dict(received_allocation_state["fleet"])
 
-        # ----- Update situation awareness
+        # > Update situation awareness
         task_state_change, fleet_state_change = self.update_situation_awareness(
             tasklog=received_tasklog,
             fleet=received_fleet
         )
 
-        # -> Get received agent
+        # ----- Update shared states
+        # > Get received agent
         received_agent = self.fleet[team_msg.source]
 
-        # ----- Update shared states
+        # > Update the agent in the fleet
         self.update_shared_states(
             agent=received_agent,
             **received_allocation_state

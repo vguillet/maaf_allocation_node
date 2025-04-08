@@ -28,6 +28,7 @@ from copy import deepcopy
 
 # Libs
 from pprint import pformat
+import matplotlib.pyplot as plt
 
 # Suppress FutureWarning messages
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -169,7 +170,8 @@ class MAAFAgent(Node):
 
         self.get_logger().info(f"\n> Agent {self.id} initialised: " +
                                #f"\n     Hierarchy level: {self.hierarchy_level}" +
-                               f"\n     Skillset: {self.agent.skillset}"
+                               f"\n     Skillset: {self.agent.skillset}" +
+                               f"\n     Environment: {self.environment}"
                                )
 
     # ============================================================== INIT
@@ -260,7 +262,6 @@ class MAAFAgent(Node):
             )
 
         # ---------- environment
-        # TODO: Cleanup
         self.env_sub = self.create_subscription(
             msg_type=TeamCommStamped,
             topic=topic_environment,
@@ -730,7 +731,7 @@ class MAAFAgent(Node):
             # -> Terminate script
             sys.exit()
 
-    def __env_callback(self, msg: TeamCommStamped) -> None:   # TODO: Cleanup
+    def __env_callback(self, msg: TeamCommStamped) -> None:
         if self.environment is None:
 
             self.environment = Environment.from_json(json_str=msg.memo)
@@ -742,7 +743,7 @@ class MAAFAgent(Node):
             self.get_logger().info(f"         < Received environment update")
 
             # # -> Display the graph
-            # nx.draw(self.environment["graph"], pos=self.environment["pos"])
+            # nx.draw(self.environment.graph, pos=self.environment.pos2D)
             # plt.show()
 
             # -> Reset allocation states
