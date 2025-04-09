@@ -218,7 +218,6 @@ class MAAFAgent(Node):
         """
         # -> Create task log object
         self.tasklog = TaskLog()
-        self.tasklog.init_tasklog(agent_id=self.agent.id)
 
         # # -> Fill with initial data
         # # > Retrieve initial task data from parameters
