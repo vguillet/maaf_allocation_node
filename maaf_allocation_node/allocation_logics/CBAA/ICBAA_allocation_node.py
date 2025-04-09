@@ -74,11 +74,12 @@ class ICBAANode(ICBAgent):
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # ----------------------------------- Confirm initialisation
+        # -> Set self state as online
+        self.agent.set_online_state(online=True)
+
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
         self.publish_allocation_state_msg()
-
-        self.publish_goal_msg(meta_action="empty", traceback="Initialisation")
 
     # ============================================================== PROPERTIES
     def _setup_allocation_additional_states(self) -> None:

@@ -859,9 +859,6 @@ class MAAFAgent(Node):
 
         # self.compute_bids()
 
-        # -> Publish goal (necessary to publish updated paths if computed before
-        self.publish_goal_msg(meta_action="update", traceback="Pose update")
-
         # -> Call pose update listeners
         self.call_on_pose_update_listeners()
 
@@ -1066,7 +1063,7 @@ class MAAFAgent(Node):
                          *args, **kwargs
                          ):
         """
-        Publish goal to the robot's goal topic for execution as TeamCommStamped message
+        Publish goal to the robot's goal topic for execution as TeamCommStamped message.
 
         :param meta_action: action to take, can be "empty" or "update"
         """
@@ -1083,24 +1080,47 @@ class MAAFAgent(Node):
         msg.meta_action = meta_action
 
         if meta_action == "update":
-            # TODO: Remove once pathfinding handled by controller -----
-            # -> Update path to start task to ensure agent path starts from current position
-            if self.agent.plan:
-                for source_node, target_node in self.agent.plan.get_node_pairs(agent_id=self.agent.id):
-                    self.update_path(
-                        source_node=source_node,
-                        target_node=target_node,
-                    )
-
-            # -> Embed paths in agent
-            agent_dict = self.agent.asdict()
-            agent_dict["plan"]["paths"] = self.agent.plan.get_paths(
-                agent_id=self.agent.id,
-                tasklog=self.tasklog,
-                requirement=None,  # TODO: Correct once path requirements are implemented
-                selection="shortest"  # TODO: Correct once path requirements are implemented
-            )
-            # TODO: ---------------------------------------------------
+            # # TODO: Remove once pathfinding handled by controller -----
+            # # -> Update path to start task to ensure agent path starts from current position
+            # if self.agent.plan:
+            #     for source_node, target_node in self.agent.plan.get_node_pairs(agent_id=self.agent.id):
+            #         self.update_path(
+            #             source_node=source_node,
+            #             target_node=target_node,
+            #         )
+            #
+            # # -> Embed paths in agent
+            # agent_dict = self.agent.asdict()
+            # agent_dict["plan"]["paths"] = self.agent.plan.get_paths(
+            #     agent_id=self.agent.id,
+            #     tasklog=self.tasklog,
+            #     requirement=None,  # TODO: Correct once path requirements are implemented
+            #     selection="shortest"  # TODO: Correct once path requirements are implemented
+            # )
+            #
+            # if len(self.agent.plan.task_sequence) == 0:
+            #     plan_path = []
+            #
+            # else:
+            #     plan_tasks_locs_sequence = [self.agent.state.pos]
+            #     for task_id in self.agent.plan.task_sequence:
+            #         task_ = self.tasklog[task_id]
+            #
+            #         plan_tasks_locs_sequence.append(
+            #             [task_.instructions["x"], task_.instructions["y"]]
+            #         )
+            #
+            #     plan_path = self.environment.get_loc_sequence_shortest_path(
+            #         loc_sequence=plan_tasks_locs_sequence,
+            #         x_lim=None,
+            #         y_lim=None,
+            #         create_new_node=False,
+            #         compute_missing_paths=True
+            #     )
+            #
+            # # -> Remove the current agent position from the path
+            # plan_path.pop(0)
+            # # TODO: ---------------------------------------------------
 
             # -> Gather tasks in plan
             tasks = {}
@@ -1110,7 +1130,7 @@ class MAAFAgent(Node):
 
             msg.target = self.id
             memo = {
-                "agent": agent_dict,
+                "agent": self.agent.asdict(),
                 "tasks": tasks,
                 "args": args,
                 "kwargs": kwargs

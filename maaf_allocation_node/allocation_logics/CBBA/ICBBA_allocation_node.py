@@ -89,8 +89,6 @@ class ICBBANode(ICBAgent):
         time.sleep(2)
         self.publish_allocation_state_msg()
 
-        self.publish_goal_msg(meta_action="empty", traceback="Initialisation")
-
     # ============================================================== PROPERTIES
     def _setup_allocation_additional_states(self) -> None:
         """
