@@ -93,15 +93,6 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
             }]
         """
 
-        logger.info(f"Calculating bids for task {task.id} ({task.type}) with {len(agent_lst)} agents.")
-
-        logger.info(f"Task instructions: {task.instructions}")
-
-        for agent in agent_lst:
-            logger.info(f"Agent {agent.id} with skillset {agent.skillset}")
-
-        logger.info(f"Valid agents for task {task.id}: {[agent.id for agent in agent_lst]}")
-
         # -> Calculate the weighted Manhattan distance for all valid agents
         bids = []
 
@@ -131,63 +122,6 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
                 # > Insert the task at the insertion position
                 new_plan.add_task(task, position=i)
 
-                # -> Verify that all necessary paths have been computed
-                for source_node, target_node in new_plan.get_node_pairs(agent_id=agent.id):
-                    # -> If agent on a node in the path for the current bid, reuse and trim the path
-                    current_path = tasklog.get_path(
-                        source=source_node,
-                        target=target_node,
-                        requirement=None,       # TODO: Fix once path requirements have been implemented
-                        selection="shortest"
-                    )
-
-                    if current_path:
-                        current_path = current_path["path"]
-
-                        if source_node in fleet and source_node in current_path:
-                            path = current_path[current_path.index(agent_node):]
-                            compute_path = False
-
-                        else:
-                            compute_path = True
-                    else:
-                        compute_path = True
-
-                    if compute_path:
-                        # -> Get nodes position
-                        # > Source node
-                        if source_node in fleet:
-                            source_node_loc = (int(fleet[source_node].state.x), int(fleet[source_node].state.y))  # TODO: SET AS AGENT NODE
-                        else:
-                            source_node_loc = (int(tasklog[source_node].instructions["x"]), int(tasklog[source_node].instructions["y"]))    # TODO: Check typing if using continuous parameters
-
-                        # > Target node
-                        if target_node in fleet:
-                            target_node_loc = (fleet[target_node].state.x, fleet[target_node].state.y)
-                        else:
-                            target_node_loc = (tasklog[target_node].instructions["x"], tasklog[target_node].instructions["y"])
-
-                        # -> Find the weigthed Manhattan distance between the agent and the task
-                        # logger.info(f"Path from {source_node_loc} to {target_node_loc}")
-                        # logger.info(f"Nodes: {environment['all_pairs_shortest_paths'].keys()}")
-                        # logger.info(f'{source_node_loc}->{target_node_loc}, {environment["all_pairs_shortest_paths"][source_node_loc].keys()}')
-                        path = environment["all_pairs_shortest_paths"][source_node_loc][target_node_loc]
-                        # path = nx.shortest_path(environment["graph"], agent_node, task_node)
-                        # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
-
-                    # > Store path to agent task log
-                    tasklog.add_path(
-                        source_node=source_node,
-                        target_node=target_node,
-                        path={
-                            "id": f"{agent.id}_{task.id}",
-                            "path": path,
-                            "requirements": ["ground"]       # TODO: Fix once path requirements have been implemented
-                        },
-                        two_way=False,
-                        selection="latest"
-                    )
-
                 # -> Calculate the marginal gain of the new plan
                 marginal_gain_noise = consistent_random(
                     string=agent.id + task.id,
@@ -196,19 +130,51 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
                 )   # Start with random tiny number to avoid division by zero and ties in allocation
 
                 # > Calculate the size difference between the new and current path
-                plan_path, _, _ = agent.plan.get_path(
-                    agent_id=agent.id,
-                    tasklog=tasklog,
-                    requirement=None,       # TODO: Fix once path requirements have been implemented
-                    selection="shortest"
-                )
+                # Old plan path
+                if len(agent.plan.task_sequence) == 0:
+                    plan_path = []
 
-                new_plan_path, _, _ = new_plan.get_path(
-                    agent_id=agent.id,
-                    tasklog=tasklog,
-                    requirement=None,       # TODO: Fix once path requirements have been implemented
-                    selection="shortest"
-                )
+                else:
+                    plan_tasks_locs_sequence = [agent.state.pos]
+                    for task_id in agent.plan.task_sequence:
+                        task_ = tasklog[task_id]
+
+                        plan_tasks_locs_sequence.append(
+                            [task_.instructions["x"], task_.instructions["y"]]
+                        )
+
+                    logger.info(f"Agent pos: {plan_tasks_locs_sequence}")
+
+                    plan_path = environment.get_loc_sequence_shortest_path(
+                        loc_sequence=plan_tasks_locs_sequence,
+                        x_lim = None,
+                        y_lim = None,
+                        create_new_node = False,
+                        compute_missing_paths = True
+                        )
+
+                    # -> Remove the current agent position from the path
+                    plan_path.pop(0)
+
+                # New plan path
+                new_plan_tasks_locs_sequence = [agent.state.pos]
+                for task_id in new_plan.task_sequence:
+                    task_ = tasklog[task_id]
+
+                    new_plan_tasks_locs_sequence.append(
+                        (task_.instructions["x"], task_.instructions["y"])
+                    )
+
+                new_plan_path = environment.get_loc_sequence_shortest_path(
+                    loc_sequence=new_plan_tasks_locs_sequence,
+                    x_lim = None,
+                    y_lim = None,
+                    create_new_node = False,
+                    compute_missing_paths = True
+                    )
+
+                # -> Remove the current agent position from the path
+                new_plan_path.pop(0)
 
                 # path_gain = 1/len(plan_path) if len(plan_path) > 0 else 0
                 # new_path_gain = 1/len(new_plan_path) if len(new_plan_path) > 0 else 0
