@@ -94,26 +94,31 @@ class BiddingLogic(ABC):
                     "Return value must be a tuple with two elements: (list of bid dictionaries, bids cache dictionary).")
 
             bid_list, bids_cache_output = result
+
             if not isinstance(bid_list, list):
                 raise TypeError("The first element of the return tuple must be a list of bid dictionaries.")
             if not isinstance(bids_cache_output, dict):
                 raise TypeError("The second element of the return tuple must be a dictionary (bids cache).")
 
-            # Validate each bid dictionary.
-            required_keys = {"agent_id", "marginal_gains"}
+            # Validate each bid dictionary
+            required_keys = {"agent_id", "insertion_loc", "bid", "allocation", "bid_depth"}
             for bid in bid_list:
                 if not isinstance(bid, dict):
                     raise TypeError("Each bid must be a dictionary.")
                 missing_keys = required_keys - bid.keys()
                 if missing_keys:
                     raise ValueError(f"Bid dictionary is missing required keys: {missing_keys}")
+
                 if not isinstance(bid["agent_id"], str):
                     raise TypeError("The 'agent_id' in each bid dictionary must be a string.")
-                if not isinstance(bid["marginal_gains"], list):
-                    raise TypeError("The 'marginal_gains' in each bid dictionary must be a list.")
-                for gain in bid["marginal_gains"]:
-                    if not isinstance(gain, (int, float)):
-                        raise TypeError("Each value in 'marginal_gains' must be an int or float.")
+                if not isinstance(bid["insertion_loc"], int):
+                    raise TypeError("The 'insertion_loc' in each bid dictionary must be an integer.")
+                if not isinstance(bid["bid"], (int, float)):
+                    raise TypeError("The 'bid' in each bid dictionary must be a number (int or float).")
+                if not isinstance(bid["allocation"], (int, float)):
+                    raise TypeError("The 'allocation' in each bid dictionary must be a number (int or float).")
+                if not isinstance(bid["bid_depth"], int):
+                    raise TypeError("The 'bid_depth' in each bid dictionary must be an integer.")
             return result
 
         return wrapper

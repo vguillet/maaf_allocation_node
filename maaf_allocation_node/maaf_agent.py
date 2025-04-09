@@ -788,9 +788,6 @@ class MAAFAgent(Node):
             # -> List all task nodes from scenario
             task_node_locs = [[goto_task["instructions"]["x"], goto_task["instructions"]["y"]] for goto_task in self.scenario.goto_tasks]
 
-            # print(task_node_locs)
-            # print("\n", self.environment["pos"])
-
             # -> Compute all shortest paths from all nodes to all task nodes
             matching_nodes = [node for node, position in self.environment["pos"].items() if position in task_node_locs]
 

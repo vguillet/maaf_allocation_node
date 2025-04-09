@@ -778,6 +778,9 @@ class ICBBANode(ICBAgent):
             if agent.state.timestamp > self.last_update_s.loc[agent.id, "last_update_s"]:
                 self.last_update_s.loc[agent.id, "last_update_s"] = agent.state.timestamp
 
+        self.get_logger().info(f"Agent {self.id}: Current plan: {self.agent.plan.task_sequence}")
+
+
     def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
         """
         Find the largest marginal gain achieved from inserting a task into the plan at the most beneficial position

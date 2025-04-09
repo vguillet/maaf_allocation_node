@@ -107,7 +107,6 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
             # -> If the marginal gains for the current agent and task have been calculated before, reuse the result
             if key in bids_cache.keys():
                 bids.append(bids_cache[key])
-                # logger.info(f"Reusing marginal gains for agent {agent.id} and task {task.id} from cache.")
                 continue
 
             # -----
@@ -142,8 +141,6 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
                         plan_tasks_locs_sequence.append(
                             [task_.instructions["x"], task_.instructions["y"]]
                         )
-
-                    logger.info(f"Agent pos: {plan_tasks_locs_sequence}")
 
                     plan_path = environment.get_loc_sequence_shortest_path(
                         loc_sequence=plan_tasks_locs_sequence,
@@ -247,8 +244,6 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
 
                 # -> Store in the marginal gains cache
                 bids_cache[key] = bid
-
-        logger.info(f"{bids}, {bids_cache}")
 
         return bids, bids_cache
 
