@@ -1016,16 +1016,6 @@ class MAAFAgent(Node):
         Publish allocation state to the fleet as TeamCommStamped.msg message
         """
 
-        # TODO: Remove once pathfinding handled by controller -----
-        # -> Update path to start task to ensure agent path starts from current position
-        if self.agent.plan:
-            for source_node, target_node in self.agent.plan.get_node_pairs(agent_id=self.agent.id):
-                self.update_path(
-                    source_node=source_node,
-                    target_node=target_node,
-                )
-        # TODO: ---------------------------------------------------
-
         # -> Create message
         msg = TeamCommStamped()
 
@@ -1051,8 +1041,6 @@ class MAAFAgent(Node):
 
         # -> Publish message
         self.fleet_msgs_pub.publish(msg)
-        # self.fleet_msgs_pub.publish(msg)
-        # self.fleet_msgs_pub.publish(msg)
 
     def publish_goal_msg(self,
                          meta_action: str = "empty",     # empty/update,

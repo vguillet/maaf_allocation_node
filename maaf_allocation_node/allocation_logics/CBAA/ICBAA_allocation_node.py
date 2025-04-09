@@ -386,6 +386,7 @@ class ICBAANode(ICBAgent):
 
         # -> If no bid evaluation function, return empty list
         if self.bid_evaluation_function is None:
+            self.get_logger().warning(f"!!!!!! WARNING: No bid evaluation function found for task type: {task.type}")
             return []
 
         # -> Compute bids
@@ -417,6 +418,8 @@ class ICBAANode(ICBAgent):
 
         # -> Set task bid reference state
         task.local["bid(s)_reference_state"] = deepcopy(self.agent.state)
+
+        self.get_logger().info(f"Bid for task {task.id} computed: {pformat(task_bids)}")
 
         return task_bids
 
