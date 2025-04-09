@@ -100,15 +100,12 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
         for agent in agent_lst:
             logger.info(f"Agent {agent.id} with skillset {agent.skillset}")
 
-        # -> Check the agents skillset against the task instructions
-        valid_agents = get_valid_agent_list(task=task, agent_lst=agent_lst)
-
-        logger.info(f"Valid agents for task {task.id}: {[agent.id for agent in valid_agents]}")
+        logger.info(f"Valid agents for task {task.id}: {[agent.id for agent in agent_lst]}")
 
         # -> Calculate the weighted Manhattan distance for all valid agents
         bids = []
 
-        for agent in valid_agents:
+        for agent in agent_lst:
             # -> Agent node
             agent_node = (agent.state.x, agent.state.y)
 

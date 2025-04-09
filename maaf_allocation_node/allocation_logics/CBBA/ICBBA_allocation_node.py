@@ -171,185 +171,143 @@ class ICBBANode(ICBAgent):
 
     # ============================================================== METHODS
     # ---------------- Processes
-    def update_situation_awareness(self,
-                                   tasklog: Optional[TaskLog],
-                                   fleet: Optional[Fleet]
-                                   ) -> Tuple[bool, bool]:
+    def add_agent(self, agent: Agent) -> None:
         """
-        Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
-        local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
-        they are no longer in the task list or fleet.
+        Add new agent to local fleet and extend local states with new columns for new agent
 
-        :param tasklog: Task log to merge
-        :param fleet: Fleet to merge
-
-        :return: Tuple of bools (task_state_change, fleet_state_change)
+        :param agent: Agent to add
         """
 
-        def add_agent(agent: Agent) -> None:
-            """
-            Add new agent to local fleet and extend local states with new columns for new agent
-            """
-
-            # -> Add a column to all relevant allocation lists and matrices with new agent
-            state = self.get_state(
-                state_awareness=False,
-                local_allocation_state=True,
-                shared_allocation_state=True,
-                serialised=False
-            )
-
-            # > Remove task_path_p from the state (not needed for this operation)
-            state.pop("path_p")
-
-            # > Remove bundle_b from the state (not needed for this operation)
-            state.pop("bundle_b")
-
-            # > Remove winning_bids_y from the state (not needed for this operation)
-            state.pop("winning_bids_y")
-
-            # > Remove winning_agents_k from the state (not needed for this operation)
-            state.pop("winning_agents_k")
-
-            # > Remove last_update_s from the state (operation performed separately)
-            state.pop("last_update_s")
-            self.last_update_s.loc[agent.id] = 0
-
-            for matrix in state.values():
-                matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
-
-        def remove_agent(agent: Agent) -> None:
-            """
-            Remove agent from local fleet and all relevant allocation lists and matrices
-            """
-
-            # TODO: Figure out how to deal with removing bids from the winning bid matrix (full reset vs bid owner tracking). For now, reset winning bids matrix (full reset)
-            self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
-
-            # -> Remove agent from all allocation lists and matrices
-            state = self.get_state(
-                state_awareness=False,
-                local_allocation_state=True,
-                shared_allocation_state=True,
-                serialised=False
-            )
-
-            # > Remove task_path_p from the state (not needed for this operation)
-            state.pop("path_p")
-
-            # > Remove bundle_b from the state (not needed for this operation)
-            state.pop("bundle_b")
-
-            # > Remove winning_bids_y from the state (not needed for this operation)
-            state.pop("winning_bids_y")
-
-            # > Remove winning_agents_k from the state (not needed for this operation)
-            state.pop("winning_agents_k")
-
-            for matrix in state.values():
-                if agent.id in matrix.columns:
-                    matrix.drop(columns=agent.id, inplace=True)
-
-        def add_task(task: Task) -> None:
-            """
-            Add new task to local tasks and extend local states with new rows for new task
-            """
-            # -> Add a row to all allocation lists and matrices with new task
-            state = self.get_state(
-                state_awareness=False,
-                local_allocation_state=True,
-                shared_allocation_state=True,
-                serialised=False
-            )
-
-            # > Remove task_path_p from the state (not needed for this operation)
-            state.pop("path_p")
-
-            # > Remove bundle_b from the state (not needed for this operation)
-            state.pop("bundle_b")
-
-            # > Remove winning_bids_y from the state (operation performed separately)
-            state.pop("winning_bids_y")
-            self.winning_bids_y.loc[task.id] = 0
-
-            # > Remove winning_agents_k from the state (operation performed separately)
-            state.pop("winning_agents_k")
-            self.winning_agents_k.loc[task.id] = ""
-
-            # > Remove last_update_s from the state (not needed for this operation)
-            state.pop("last_update_s")
-
-            for matrix in state.values():
-                matrix.loc[task.id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
-
-        def terminate_task(task: Task) -> None:
-            """
-            Flag task as terminated in task log and remove all relevant allocation lists and matrices rows
-            """
-
-            # -> If self agent terminated task and task is current task id, only remove task
-            if task.termination_source_id == self.id and task.id == self.agent.plan.current_task_id:
-                self._drop_task(task_id=task.id, reset=True, forward=False, motive="termination")
-
-            # -> Cancel goal if task is assigned to self
-            elif task.id in self.agent.plan:
-                self._drop_task(task_id=task.id, reset=True, forward=True, motive="termination")
-
-            # -> Remove task from all allocation lists and matrices
-            state = self.get_state(
-                state_awareness=False,
-                local_allocation_state=True,
-                shared_allocation_state=True,
-                serialised=False
-            )
-
-            # > Remove task_path_p from the state (operation performed separately)
-            state.pop("path_p")
-
-            # > Remove bundle_b from the state (operation performed separately)
-            state.pop("bundle_b")
-
-            # > Remove last_update_s from the state (not needed for this operation)
-            state.pop("last_update_s")
-
-            for matrix in state.values():
-                if task.id in matrix.index:
-                    matrix.drop(index=task.id, inplace=True)
-
-        # ---- Merge received fleet into local one
-        fleet_state_change = self.fleet.merge(
-            fleet=fleet,
-            add_agent_callback=add_agent,
-            remove_agent_callback=remove_agent,
-            fleet_state_change_callback=None,
-            prioritise_local=False,
-            logger=self.get_logger(),
+        # -> Add a column to all relevant allocation lists and matrices with new agent
+        state = self.get_state(
+            state_awareness=False,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=False
         )
 
-        # ---- Merge received task list into local one
-        task_state_change = self.tasklog.merge(
-            tasklog=tasklog,
-            add_task_callback=add_task,
-            terminate_task_callback=terminate_task,
-            tasklog_state_change_callback=None,
-            prioritise_local=False,
-            logger=self.get_logger()
+        # > Remove task_path_p from the state (not needed for this operation)
+        state.pop("path_p")
+
+        # > Remove bundle_b from the state (not needed for this operation)
+        state.pop("bundle_b")
+
+        # > Remove winning_bids_y from the state (not needed for this operation)
+        state.pop("winning_bids_y")
+
+        # > Remove winning_agents_k from the state (not needed for this operation)
+        state.pop("winning_agents_k")
+
+        # > Remove last_update_s from the state (operation performed separately)
+        state.pop("last_update_s")
+        self.last_update_s.loc[agent.id] = 0
+
+        for matrix in state.values():
+            matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
+
+    def remove_agent(self, agent: Agent) -> None:
+        """
+        Remove agent from local fleet and all relevant allocation lists and matrices
+
+        :param agent: Agent to remove
+        """
+
+        # TODO: Figure out how to deal with removing bids from the winning bid matrix (full reset vs bid owner tracking). For now, reset winning bids matrix (full reset)
+        self.winning_bids_y = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
+
+        # -> Remove agent from all allocation lists and matrices
+        state = self.get_state(
+            state_awareness=False,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=False
         )
 
-        # self.get_logger().info(f"Tasklog after remove: {self.tasklog.ids_pending} "
-        #                        f"\nshared_bids_b: {self.shared_bids_b.index}"
-        #                        f"\nshared_allocations_a: {self.shared_allocations_a.index}"
-        #                        f"\nlocal_bids_c: {self.local_bids_c.index}"
-        #                        f"\nlocal_allocations_d: {self.local_allocations_d.index}"
-        #                        f"\nwinning_agents_k: {self.winning_agents_k.index}"
-        #                        # f"\nlast_update_s: {self.last_update_s.index}"
-        #                        f"\nbids_depth_e: {self.bids_depth_e.index}"
-        #                        f"\nwinning_bids_y: {self.winning_bids_y.index}"
-        #                        f"\bpath_p: {self.agent.plan.task_sequence}"
-        #                        f"\nbundle_b: {self.agent.plan.task_bundle}"
-        #                        )
+        # > Remove task_path_p from the state (not needed for this operation)
+        state.pop("path_p")
 
-        return task_state_change, fleet_state_change
+        # > Remove bundle_b from the state (not needed for this operation)
+        state.pop("bundle_b")
+
+        # > Remove winning_bids_y from the state (not needed for this operation)
+        state.pop("winning_bids_y")
+
+        # > Remove winning_agents_k from the state (not needed for this operation)
+        state.pop("winning_agents_k")
+
+        for matrix in state.values():
+            if agent.id in matrix.columns:
+                matrix.drop(columns=agent.id, inplace=True)
+
+    def add_task(self, task: Task) -> None:
+        """
+        Add new task to local tasks and extend local states with new rows for new task
+
+        :param task: Task to add
+        """
+        # -> Add a row to all allocation lists and matrices with new task
+        state = self.get_state(
+            state_awareness=False,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=False
+        )
+
+        # > Remove task_path_p from the state (not needed for this operation)
+        state.pop("path_p")
+
+        # > Remove bundle_b from the state (not needed for this operation)
+        state.pop("bundle_b")
+
+        # > Remove winning_bids_y from the state (operation performed separately)
+        state.pop("winning_bids_y")
+        self.winning_bids_y.loc[task.id] = 0
+
+        # > Remove winning_agents_k from the state (operation performed separately)
+        state.pop("winning_agents_k")
+        self.winning_agents_k.loc[task.id] = ""
+
+        # > Remove last_update_s from the state (not needed for this operation)
+        state.pop("last_update_s")
+
+        for matrix in state.values():
+            matrix.loc[task.id] = pd.Series(np.zeros(self.Agent_count_N_u), index=self.fleet.ids_active)
+
+    def terminate_task(self, task: Task) -> None:
+        """
+        Flag task as terminated in task log and remove all relevant allocation lists and matrices rows
+
+        :param task: Task to terminate
+        """
+
+        # -> If self agent terminated task and task is current task id, only remove task
+        if task.termination_source_id == self.id and task.id == self.agent.plan.current_task_id:
+            self._drop_task(task_id=task.id, reset=True, forward=False, motive="termination")
+
+        # -> Cancel goal if task is assigned to self
+        elif task.id in self.agent.plan:
+            self._drop_task(task_id=task.id, reset=True, forward=True, motive="termination")
+
+        # -> Remove task from all allocation lists and matrices
+        state = self.get_state(
+            state_awareness=False,
+            local_allocation_state=True,
+            shared_allocation_state=True,
+            serialised=False
+        )
+
+        # > Remove task_path_p from the state (operation performed separately)
+        state.pop("path_p")
+
+        # > Remove bundle_b from the state (operation performed separately)
+        state.pop("bundle_b")
+
+        # > Remove last_update_s from the state (not needed for this operation)
+        state.pop("last_update_s")
+
+        for matrix in state.values():
+            if task.id in matrix.index:
+                matrix.drop(index=task.id, inplace=True)
 
     def update_shared_states(self,
                              agent: Agent,
@@ -623,10 +581,68 @@ class ICBBANode(ICBAgent):
 
                 # > For each task not in the plan ...
                 for task in remaining_tasks:
-                    #
-                    # TODO: H-CBBA - Determine list of agents to bid for based on organisation
-                    # -> Compute bids
-                    self._bid(task=task, agent_lst=[self.agent])
+                    # ----- Determine list of agents to bid for
+                    # TODO: H-CBBA - Determine list of agents to bid for based on organisation.
+                    #       > Based on abstract task affiliation and allocation - missing!!!
+                    #       > Based on task type/agents roles - done
+                    #       > Based on task skill requirements - done
+
+                    agent_lst = self.fleet.agents_active
+
+                    # ----- Model based filtering (task is in model)
+                    if task.type in self.organisation.moise_model.functional_specification.goals:
+                        # -> Filter by group assignment
+
+                        # Get group task is assigned to
+
+                        # Filter agents not in the same group as the one the task is assigned to
+
+                        # -> Filter by task type / agent role
+                        filtered_agent_lst = []
+
+                        for agent in agent_lst:
+
+                            agent_roles = self.organisation.role_allocation.get_agent_roles(
+                                agent_id=agent.id,
+                                group_id=None       # TODO: H-CBBA - Change to be the group the task (or task's abstract task) was assigned to, or None if not applicable)
+                            )
+
+                            if self.organisation.moise_model.deontic_specification.check_agent_goal_compatibility(
+                                    agent_roles=agent_roles,
+                                    goal_name=task.type,
+                                    ):
+                                filtered_agent_lst.append(agent)
+
+                        agent_lst = filtered_agent_lst
+
+                        # -> Filter by task skill requirements (final extra filter for safety)
+                        filtered_agent_lst = []
+
+                        for agent in agent_lst:
+                            if self.organisation.moise_model.functional_specification.check_agent_goal_compatibility(
+                                    agent_skillset=agent.skillset,
+                                    goal_name=task.type
+                                    ):
+                                filtered_agent_lst.append(agent)
+
+                        agent_lst = filtered_agent_lst
+
+                    # ----- Task based filtering (task is not in model)
+                    else:
+                        # -> Filter by task skill requirements
+                        filtered_agent_lst = []
+
+                        # Get task skill requirements directly from task
+                        task_skills = task.skill_requirements
+                        for agent in agent_lst:
+                            # Check if agent has the required skills for the task
+                            if all(skill in agent.skillset for skill in task_skills):
+                                filtered_agent_lst.append(agent)
+
+                        agent_lst = filtered_agent_lst
+
+                    # ----- Compute bids
+                    self._bid(task=task, agent_lst=agent_lst)
 
                 # -> Merge local bids c into shared bids b
                 # > For each task ...
@@ -778,7 +794,7 @@ class ICBBANode(ICBAgent):
             return []
 
         # -> Get bid evaluation function from task and role
-        bid_evaluation_function = self.organisation.allocation_specification.get_task_bidding_logic(task_type=task.type)
+        bid_evaluation_function = self.organisation.allocation_specification.get_task_bidding_logic(goal_name=task.type)
 
         # -> If no bid evaluation function, return empty list
         if bid_evaluation_function is None:

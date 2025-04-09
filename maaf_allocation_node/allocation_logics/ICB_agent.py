@@ -248,6 +248,79 @@ class ICBAgent(MAAFAgent):
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
 
     # ---------------- Processes
+    def update_situation_awareness(self,
+                                   tasklog: Optional[TaskLog],
+                                   fleet: Optional[Fleet]
+                                   ) -> Tuple[bool, bool]:
+        """
+        Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
+        local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
+        they are no longer in the task list or fleet.
+
+        :param tasklog: Task log to merge
+        :param fleet: Fleet to merge
+
+        :return: Tuple of bools (task_state_change, fleet_state_change)
+        """
+
+        # ---- Merge received fleet into local one
+        fleet_state_change = self.fleet.merge(
+            fleet=fleet,
+            add_agent_callback=self.add_agent,
+            remove_agent_callback=self.remove_agent,
+            fleet_state_change_callback=None,
+            prioritise_local=False,
+            logger=self.get_logger(),
+        )
+
+        # ---- Merge received task list into local one
+        task_state_change = self.tasklog.merge(
+            tasklog=tasklog,
+            add_task_callback=self.add_task,
+            terminate_task_callback=self.terminate_task,
+            tasklog_state_change_callback=None,
+            prioritise_local=False,
+            logger=self.get_logger()
+        )
+
+        return task_state_change, fleet_state_change
+
+    @abstractmethod
+    def add_agent(self, agent: Agent) -> None:
+        """
+        Add new agent to local fleet and extend local states with new columns for new agent
+
+        :param agent: Agent to add
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def remove_agent(self, agent: Agent) -> None:
+        """
+        Remove agent from local fleet and all relevant allocation lists and matrices
+
+        :param agent: Agent to remove
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def terminate_task(self, task: Task) -> None:
+        """
+        Flag task as terminated in task log and remove all relevant allocation lists and matrices rows
+
+        :param task: Task to terminate
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def add_task(self, task: Task) -> None:
+        """
+        Add new task to local tasks and extend local states with new rows for new task
+
+        :param task: Task to add
+        """
+        raise NotImplementedError
+
     @abstractmethod
     def update_shared_states(self,
                              agent: Agent,

@@ -34,28 +34,28 @@ except ImportError:
 ##################################################################################################################
 
 
-def get_valid_agent_list(task: Task, agent_lst: list[Agent]) -> list[Agent]:
-    """
-    Filter agents unable to take on the task
-
-    :param task: The task to calculate the bid for.
-    :param agent_lst: The list of agents to consider for the bid.
-
-    :return: A list of agents that can take on the task.
-    """
-    # -> Check the agents skillset against the task instructions
-    valid_agents = []
-
-    for agent in agent_lst:
-        # > If agent has skills for the task, add to valid agents
-        if agent.has_skill(task.type):
-            valid_agents.append(agent)
-
-        # > Else, do not bid
-        else:
-            pass
-
-    return valid_agents
+# def get_valid_agent_list(task: Task, agent_lst: list[Agent]) -> list[Agent]:
+#     """
+#     Filter agents unable to take on the task
+#
+#     :param task: The task to calculate the bid for.
+#     :param agent_lst: The list of agents to consider for the bid.
+#
+#     :return: A list of agents that can take on the task.
+#     # """
+#     # -> Check the agents skillset against the task instructions
+#     valid_agents = []
+#
+#     for agent in agent_lst:
+#         # > If agent has skills for the task, add to valid agents
+#         if agent.has_skill(task.type):
+#             valid_agents.append(agent)
+#
+#         # > Else, do not bid
+#         else:
+#             pass
+#
+#     return valid_agents
 
 
 def get_valid_agents_for_follow_up_task(task: Task, agent_lst: list[Agent], intercession_targets: list[str]) -> list[Agent]:
