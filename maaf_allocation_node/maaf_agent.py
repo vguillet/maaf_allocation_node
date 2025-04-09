@@ -211,6 +211,9 @@ class MAAFAgent(Node):
 
         self.agent.add_pre_asdict_subscriber(timestamp_sync)
 
+        # -> Set self state as online
+        self.agent.set_online_state(online=True)
+
         # ---- Task log
         """
         Tasks dict of size N_t
@@ -218,13 +221,6 @@ class MAAFAgent(Node):
         """
         # -> Create task log object
         self.tasklog = TaskLog()
-
-        # # -> Fill with initial data
-        # # > Retrieve initial task data from parameters
-        # tasklog_data = []
-        #
-        # # > Add initial task data to the task log object
-        # self.tasklog.from_dict(maaflist_dict=tasklog_data)
 
     def __setup_node_pubs_subs(self) -> None:
         """

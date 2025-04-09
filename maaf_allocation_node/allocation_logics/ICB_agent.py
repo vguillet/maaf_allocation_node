@@ -64,14 +64,6 @@ class ICBAgent(MAAFAgent):
             bid_estimator=bid_estimator
         )
 
-        # # ---------- epoch
-        # self.sim_epoch_sub = self.create_subscription(
-        #     msg_type=TeamCommStamped,
-        #     topic=topic_epoch,
-        #     callback=self.sim_epoch_callback,
-        #     qos_profile=qos_sim_epoch
-        # )
-
         # ---------- Recompute
         if self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change"):
             def recompute_on_pose_update():
@@ -88,9 +80,6 @@ class ICBAgent(MAAFAgent):
                 self.check_publish_state_change()
 
             self.add_on_pose_update_listener(recompute_on_pose_update)
-
-    # def sim_epoch_callback(self, msg: TeamCommStamped):
-    #     sim_state = loads(msg.memo)
 
     # ============================================================== PROPERTIES
 
