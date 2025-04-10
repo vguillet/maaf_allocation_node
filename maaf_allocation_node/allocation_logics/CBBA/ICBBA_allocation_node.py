@@ -165,7 +165,7 @@ class ICBBANode(ICBAgent):
     # ---------------- Processes
     def add_agent(self, agent: Agent) -> None:
         """
-        Add new agent to local fleet and extend local states with new columns for new agent
+        Extend local states with new columns for new agent
 
         :param agent: Agent to add
         """
@@ -201,7 +201,7 @@ class ICBBANode(ICBAgent):
 
     def remove_agent(self, agent: Agent) -> None:
         """
-        Remove agent from local fleet and all relevant allocation lists and matrices
+        Remove agent from all relevant allocation lists and matrices
 
         :param agent: Agent to remove
         """

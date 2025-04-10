@@ -446,7 +446,7 @@ class MAAFAgent(Node):
 
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
-        self.publish_allocation_state_msg()
+        self.publish_allocation_state_msg(if_state_change=False)
 
         self.get_logger().info(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> Agent {self.id} initialised: " +
                                #f"\n     Hierarchy level: {self.hierarchy_level}" +
