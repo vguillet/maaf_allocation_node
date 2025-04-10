@@ -25,6 +25,7 @@ from abc import abstractmethod
 from typing import List, Optional, Tuple
 import warnings
 from copy import deepcopy
+import time
 
 # Libs
 from pprint import pformat
@@ -117,9 +118,8 @@ class MAAFAgent(Node):
         """
 
         # ----------------------------------- Node Configuration
-        Node.__init__(
-            self,
-            node_name=node_name,
+        super().__init__(
+            node_name=node_name
         )
 
         logger = SLogger()
@@ -168,13 +168,8 @@ class MAAFAgent(Node):
         self.prev_allocation_state_hash_dict = None
         # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
-        self.get_logger().info(f"\n> Agent {self.id} initialised: " +
-                               #f"\n     Hierarchy level: {self.hierarchy_level}" +
-                               f"\n     Skillset: {self.agent.skillset}" +
-                               f"\n     Environment: {self.environment}"
-                               )
-
     # ============================================================== INIT
+
     def __setup_fleet_and_tasklog(self) -> None:
         # ---- Fleet data
         """
@@ -192,7 +187,7 @@ class MAAFAgent(Node):
         self.fleet = self.organisation.fleet.clone()
 
         # -> Remove fleet from organisation to avoid data duplication
-        self.organisation.fleet = None
+        self.organisation.fleet = None  # TODO: Rethink fleet/organisation management
 
         # -> Check if self is in the fleet
         if self.id not in self.fleet.ids:
@@ -442,6 +437,35 @@ class MAAFAgent(Node):
         self.__setup_allocation_base_states()
         self._setup_allocation_additional_states()
 
+    def final_init(self) -> None:
+        """
+        Final initialisation method to be called at the end of the initialisation process.
+        Used to synchronise agents.
+        IMPORTANT: AUTOMATICALLY CALLED AT THE END OF THE INITIALISATION PROCESS, does not need to be called manually.
+        """
+
+        # -> Initial publish to announce the agent to the fleet and share initial state
+        time.sleep(2)
+        self.publish_allocation_state_msg()
+
+        self.get_logger().info(f"\n>>>>>>>>>>>>>>>>>>>>>>>>>>> Agent {self.id} initialised: " +
+                               #f"\n     Hierarchy level: {self.hierarchy_level}" +
+                               f"\n     Skillset: {self.agent.skillset}" +
+                               f"\n     Environment: {self.environment}"
+                               )
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        original_init = cls.__init__
+
+        def wrapped_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            # Call final_init only if this is the instance's exact class
+            if type(self) is cls:
+                self.final_init()
+
+        cls.__init__ = wrapped_init
+        
     # ============================================================== Listeners
     # ---------------- Env update
     def add_on_env_update_listener(self, listener) -> None:

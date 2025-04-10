@@ -65,8 +65,7 @@ DEEP = 2
 class ICBBANode(ICBAgent):
     def __init__(self):
         # ---- Init parent class
-        ICBAgent.__init__(
-            self,
+        super().__init__(
             node_name="ICBBA_node",
             skillset=None
         )
@@ -83,11 +82,6 @@ class ICBBANode(ICBAgent):
         # self.add_on_pose_update_listener(self.check_publish_state_change)
 
         self.bids_cache = {}
-
-        # ----------------------------------- Confirm initialisation
-        # -> Initial publish to announce the agent to the fleet and share initial state
-        time.sleep(2)
-        self.publish_allocation_state_msg()
 
     # ============================================================== PROPERTIES
     def _setup_allocation_additional_states(self) -> None:

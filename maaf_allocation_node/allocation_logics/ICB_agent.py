@@ -55,8 +55,7 @@ class ICBAgent(MAAFAgent):
                  bid_estimator=None
                  ):
         # ---- Init parent class
-        MAAFAgent.__init__(
-            self,
+        super().__init__(
             node_name=node_name,
             id=id,
             name=name,
