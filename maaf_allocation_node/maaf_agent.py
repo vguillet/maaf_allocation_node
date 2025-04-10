@@ -455,6 +455,12 @@ class MAAFAgent(Node):
                                )
 
     def __init_subclass__(cls, **kwargs):
+        """
+        Logic for calling final_init at the end of the initialisation process of all the child classes
+
+        :param kwargs:
+        :return:
+        """
         super().__init_subclass__(**kwargs)
         original_init = cls.__init__
 
@@ -465,7 +471,7 @@ class MAAFAgent(Node):
                 self.final_init()
 
         cls.__init__ = wrapped_init
-        
+
     # ============================================================== Listeners
     # ---------------- Env update
     def add_on_env_update_listener(self, listener) -> None:
@@ -598,20 +604,6 @@ class MAAFAgent(Node):
             return True
         else:
             return False
-
-    def check_publish_state_change(self):
-        # -> If state has changed, update local states (only publish when necessary)
-        if self.allocation_state_change:
-            # -> Update previous state hash
-            self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
-
-            # -> Publish allocation state to the fleet
-            self.publish_allocation_state_msg()
-
-            # self.get_logger().info(f"         < {self.id} Published allocation state update")
-        else:
-            return
-            # self.get_logger().info(f"         < {self.id} No allocation state change")
 
     # >>>> Base states grouped getter
     def get_state(self,
@@ -930,7 +922,7 @@ class MAAFAgent(Node):
         self.update_allocation()
 
         # -> If state has changed, update local states (only publish when necessary)
-        self.check_publish_state_change()
+        self.publish_allocation_state_msg(if_state_change=True)
 
     def __allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
         """
@@ -978,7 +970,7 @@ class MAAFAgent(Node):
             self.update_allocation()
 
             # -> If state has changed, update local states (only publish when necessary)
-            self.check_publish_state_change()
+            self.publish_allocation_state_msg(if_state_change=True)
 
     @abstractmethod
     def _task_msg_subscriber_callback(self, task_msg):
@@ -1035,10 +1027,48 @@ class MAAFAgent(Node):
 
     # ---------------- Processes
     # >>>> Base
-    def publish_allocation_state_msg(self):
+    def handle_message(self, msg) -> bool:
+        """
+        Check if the message should be handled by the agent or ignored
+        Ignore if:
+        - the message is from the agent itself
+        - the message is not for the agent
+        - the message is not for all agents
+
+        :param msg: msg to evaluate
+        :return: bool
+        """
+        # -> Ignore self messages
+        if msg.source == self.id:
+            return False
+
+        # -> Check if the message is for the agent
+        msg_target = msg.target
+
+        # -> If the message is not for the agent...
+        if msg_target != self.id and msg_target != "all":
+            # -> Check if the agent should rebroadcast the message
+            # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub) # TODO: Review for message rebroadcasting
+            return False
+
+        # -> If the message is for all agents or self, handle it
+        return True
+
+    def publish_allocation_state_msg(self, if_state_change: bool = True) -> None:
         """
         Publish allocation state to the fleet as TeamCommStamped.msg message
+
+        :param if_state_change: bool, whether to publish the message only if the state has changed
         """
+
+        # -> If publish is dependent on state change
+        if if_state_change:
+            # -> If state has not changed, do not publish
+            if not self.allocation_state_change:
+                return
+
+        # -> Update previous state hash
+        self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
         # -> Create message
         msg = TeamCommStamped()

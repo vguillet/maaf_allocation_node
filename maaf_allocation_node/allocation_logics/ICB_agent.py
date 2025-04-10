@@ -75,8 +75,7 @@ class ICBAgent(MAAFAgent):
                 self.update_allocation(reset_assignment=True)
 
                 # -> Publish allocation state if state has changed
-                # -> If state has changed, update local states (only publish when necessary)
-                self.check_publish_state_change()
+                self.publish_allocation_state_msg(if_state_change=True)
 
             self.add_on_pose_update_listener(recompute_on_pose_update)
 
@@ -91,13 +90,11 @@ class ICBAgent(MAAFAgent):
         :param task_msg: TaskMsgStamped message
         """
 
-        # -> Check if the message is for the agent
-        msg_target = task_msg.target
-
-        # -> If the message is not for the agent...
-        if msg_target != self.id and msg_target != "all":
+        # ----- Check if the message should be processed
+        if not self.handle_message(msg=task_msg):
             return
 
+        # ----- Unpack msg
         # -> Unpack msg
         task_dict = loads(task_msg.memo)
 
@@ -153,11 +150,8 @@ class ICBAgent(MAAFAgent):
             self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change")
         )
 
-        # -> Update previous state hash
-        self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
-
         # -> If state has changed, update local states (only publish when necessary)
-        self.publish_allocation_state_msg()
+        self.publish_allocation_state_msg(if_state_change=True)
 
     def _team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -165,20 +159,11 @@ class ICBAgent(MAAFAgent):
 
         :param team_msg: TeamComm message
         """
+        # ----- Check if the message should be processed
+        if not self.handle_message(msg=team_msg):
+            return
+
         # ----- Unpack msg
-        # -> Ignore self messages
-        if team_msg.source == self.id:
-            return
-
-        # -> Check if the message is for the agent
-        msg_target = team_msg.target
-
-        # -> If the message is not for the agent...
-        if msg_target != self.id and msg_target != "all":
-            # -> Check if the agent should rebroadcast the message
-            # msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
-            return
-
         # -> Deserialize allocation state
         received_allocation_state = self.deserialise(state=team_msg.memo)
 
@@ -229,7 +214,7 @@ class ICBAgent(MAAFAgent):
 
         # ----- Publish allocation state if state has changed
         # -> If state has changed, update local states (only publish when necessary)
-        self.check_publish_state_change()
+        self.publish_allocation_state_msg(if_state_change=True)
 
         # else:
         #     # -> Check if the agent should rebroadcast the message

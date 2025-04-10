@@ -197,6 +197,8 @@ class ICBBANode(ICBAgent):
         for matrix in state.values():
             matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
 
+        self.get_logger().info(f"Agent {self.id}: Adding agent {agent.id} to local fleet and extending local states")
+
     def remove_agent(self, agent: Agent) -> None:
         """
         Remove agent from local fleet and all relevant allocation lists and matrices

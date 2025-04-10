@@ -70,9 +70,6 @@ class ICBAANode(ICBAgent):
         # -> Setup additional CBAA-specific allocation states
         self._setup_allocation_additional_states()
 
-        # -> Initialise previous state hash
-        self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
-
         # ----------------------------------- Confirm initialisation
         # -> Initial publish to announce the agent to the fleet and share initial state
         time.sleep(2)
