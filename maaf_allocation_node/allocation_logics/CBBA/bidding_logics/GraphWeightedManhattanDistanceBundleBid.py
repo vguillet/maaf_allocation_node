@@ -245,6 +245,9 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
                 # -> Store in the marginal gains cache
                 bids_cache[key] = bid
 
+        logger.info(f"Agent list: {agent_lst}")
+        logger.info(f"Agent bids: {bids}")
+
         return bids, bids_cache
 
 

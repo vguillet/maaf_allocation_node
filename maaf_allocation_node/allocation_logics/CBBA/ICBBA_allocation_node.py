@@ -197,8 +197,6 @@ class ICBBANode(ICBAgent):
         for matrix in state.values():
             matrix[agent.id] = pd.Series(np.zeros(self.Task_count_N_t), index=self.tasklog.ids_pending)
 
-        self.get_logger().info(f"Agent {self.id}: Adding agent {agent.id} to local fleet and extending local states")
-
     def remove_agent(self, agent: Agent) -> None:
         """
         Remove agent from all relevant allocation lists and matrices
@@ -583,6 +581,8 @@ class ICBBANode(ICBAgent):
 
                     agent_lst = self.fleet.agents_active
 
+                    self.get_logger().info(f"Valid agents before filtering: {agent_lst}")
+
                     # ----- Model based filtering (task is in model)
                     if task.type in self.organisation.moise_model.functional_specification.goals:
                         # -> Filter by group assignment
@@ -608,6 +608,7 @@ class ICBBANode(ICBAgent):
                                 filtered_agent_lst.append(agent)
 
                         agent_lst = filtered_agent_lst
+                        self.get_logger().info(f"Valid agents after filtering by role: {agent_lst}")
 
                         # -> Filter by task skill requirements (final extra filter for safety)
                         filtered_agent_lst = []
@@ -620,6 +621,7 @@ class ICBBANode(ICBAgent):
                                 filtered_agent_lst.append(agent)
 
                         agent_lst = filtered_agent_lst
+                        self.get_logger().info(f"Valid agents after filtering by skills: {agent_lst}")
 
                     # ----- Task based filtering (task is not in model)
                     else:
