@@ -26,6 +26,7 @@ from typing import List, Optional, Tuple
 import warnings
 from copy import deepcopy
 import time
+import random
 
 # Libs
 from pprint import pformat
@@ -771,6 +772,15 @@ class MAAFAgent(Node):
 
                     # > Allocation
                     self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
+
+            # TODO: Remove, only for testing
+            # -> Select a random node in the environment and set as agent position
+            random_node = random.choice(list(self.environment.graph.nodes()))
+            random_node_pos = self.environment.graph.nodes[random_node]["pos"]
+            self.agent.state.x = random_node_pos[0]
+            self.agent.state.y = random_node_pos[1]
+            self.agent.state.z = random_node_pos[2]
+            self.get_logger().info(f">>>>>>>>>>>>>>>>>>>>> {self.agent.state}")
 
         # -> Call environment update listeners
         self.call_on_env_update_listeners(environment=self.environment)

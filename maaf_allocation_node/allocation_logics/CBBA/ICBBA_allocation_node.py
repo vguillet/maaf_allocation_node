@@ -601,12 +601,13 @@ class ICBBANode(ICBAgent):
                                 group_id=None       # TODO: H-CBBA - Change to be the group the task (or task's abstract task) was assigned to, or None if not applicable)
                             )
 
-                            if self.organisation.moise_model.deontic_specification.check_agent_goal_compatibility(
-                                    agent_roles=agent_roles,
-                                    goal_name=task.type,
-                                    ):
+                            # Check if any of the agent's roles are compatible with the task type
+                            if any(self.organisation.moise_model.check_role_goal_compatibility(
+                                    role_name=role,
+                                    goal_name=task.type
+                                ) for role in agent_roles):
                                 filtered_agent_lst.append(agent)
-
+                                
                         agent_lst = filtered_agent_lst
                         self.get_logger().info(f"Valid agents after filtering by role: {agent_lst}")
 
@@ -614,7 +615,7 @@ class ICBBANode(ICBAgent):
                         filtered_agent_lst = []
 
                         for agent in agent_lst:
-                            if self.organisation.moise_model.functional_specification.check_agent_goal_compatibility(
+                            if self.organisation.moise_model.check_agent_skillset_goal_compatibility(
                                     agent_skillset=agent.skillset,
                                     goal_name=task.type
                                     ):
