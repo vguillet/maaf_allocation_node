@@ -649,7 +649,7 @@ class MAAFAgent(Node):
             self.get_logger().info(f">>>>>>>>>>>>>>>>>>>>> {self.agent.state}")
 
             # -> Display the graph
-            self.environment.plot_env(fleet=self.fleet)
+            #self.environment.plot_env(fleet=self.fleet)
 
         # -> Call environment update listeners
         self.call_on_env_update_listeners(environment=self.environment)
