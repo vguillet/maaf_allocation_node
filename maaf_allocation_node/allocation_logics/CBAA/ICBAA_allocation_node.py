@@ -62,7 +62,7 @@ class ICBAANode(ICBAgent):
         # ---- Init parent class
         ICBAgent.__init__(
             self,
-            node_name="ICBAA_node",
+            node_class="ICBAA_node",
             skillset=None
         )
 

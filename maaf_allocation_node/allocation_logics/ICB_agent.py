@@ -47,37 +47,44 @@ except ModuleNotFoundError:
 
 
 class ICBAgent(MAAFAgent):
-    def __init__(self,
-                 node_name: str,
-                 id: str = None,
-                 name: str = None,
-                 skillset: List[str] = None,
-                 bid_estimator=None
-                 ):
+    def __init__(self, node_class: str):
         # ---- Init parent class
-        super().__init__(
-            node_name=node_name,
-            id=id,
-            name=name,
-            skillset=skillset,
-            bid_estimator=bid_estimator
-        )
+        super().__init__(node_class=node_class)
 
         # ---------- Recompute
+        reset_assignment = True
+
+        # -> Recompute bids on environment change
+        if True:    # TODO: Add parameter to enable/disable this in config
+            self.add_on_env_update_listener(lambda: self.update_allocation(reset_assignment=reset_assignment))
+
+        # -> Recompute bids on state change
         if self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change"):
-            def recompute_on_pose_update():
-                if self.agent.plan.current_task_id is not None:
-                    # -> Drop current task
-                    self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
-                    self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
+            self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=reset_assignment))
 
-                # -> Update allocation
-                self.update_allocation(reset_assignment=True)
+    # ============================================================== INIT
+    def _setup_node_additional_pubs_subs(self) -> None:
+        """
+        Setup additional pubs-subs for the node.
+        !!! Called automatically by the parent class constructor
+        :return:
+        """
 
-                # -> Publish allocation state if state has changed
-                self.publish_allocation_state_msg(if_state_change=True)
+        # ---------- bids
+        self.bid_sub = self.create_subscription(
+            msg_type=Bid,
+            topic=topic_bids,
+            callback=self.__bid_subscriber_callback,
+            qos_profile=qos_intercession
+        )
 
-            self.add_on_pose_update_listener(recompute_on_pose_update)
+        # ---------- allocation
+        self.allocation_sub = self.create_subscription(
+            msg_type=Allocation,
+            topic=topic_allocations,
+            callback=self.__allocation_subscriber_callback,
+            qos_profile=qos_intercession
+        )
 
     # ============================================================== PROPERTIES
 
@@ -121,9 +128,6 @@ class ICBAgent(MAAFAgent):
             if task.id in self.tasklog.ids:
                 return
 
-        #     # TODO: Remove this line once task creation handles stamp creation
-        #     task.creation_timestamp = self.current_timestamp
-        #
         # elif task_msg.meta_action == "completed":
         #     task.termination_timestamp = self.current_timestamp
         #     # TODO: Finish implementing task completion
@@ -152,6 +156,8 @@ class ICBAgent(MAAFAgent):
 
         # -> If state has changed, update local states (only publish when necessary)
         self.publish_allocation_state_msg(if_state_change=True)
+
+        self.environment.plot_env(fleet=self.fleet, tasklog=self.tasklog)
 
     def _team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -219,6 +225,99 @@ class ICBAgent(MAAFAgent):
         # else:
         #     # -> Check if the agent should rebroadcast the message
         #     msg, rebroadcast = self.rebroadcast(msg=team_msg, publisher=self.fleet_msgs_pub)
+
+    def __bid_subscriber_callback(self, bid_msg: Bid) -> None:
+        """
+        # TODO: Review and test this callback
+        Callback for the bid subscriber
+
+        :param bid_msg: Bid message
+        """
+
+        self.get_logger().info(f"{self.id} < Received bid: \n    Task id: {bid_msg.task_id}\n    Agent id: {bid_msg.target_agent_id}\n    Value: {bid_msg.value}\n    Priority: {bid_msg.priority}")
+
+        # -> Check if bid is for a task the agent is aware of
+        if bid_msg.task_id not in self.tasklog.ids:
+            self.get_logger().info(f"!!! WARNING: Received bid for task {bid_msg.task_id} not in task log")
+            return
+        # -> Check if bid is for an agent the agent is aware of
+        elif bid_msg.target_agent_id not in self.fleet.ids_active:
+            self.get_logger().info(f"!!! WARNING: Received bid for agent {bid_msg.target_agent_id} not in fleet")
+            return
+
+        # -> Priority merge received bid into current bids b
+        self.shared_bids_b, self.shared_bids_priority_beta = self.priority_merge(
+                                # Logging
+                                task_id=bid_msg.task_id,
+                                agent_id=bid_msg.target_agent_id,
+
+                                # Merging
+                                matrix_updated_ij=self.shared_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
+                                matrix_source_ij=bid_msg.value,
+                                priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
+                                priority_source_ij=bid_msg.priority,
+
+                                #greater_than_zero_condition=True,
+
+                                # Reset
+                                currently_assigned=None,
+                                reset=False     # TODO: REVIEW (was True before refactor..?)
+                                )
+
+        # -> Update allocation
+        self.update_allocation()
+
+        # -> If state has changed, update local states (only publish when necessary)
+        self.publish_allocation_state_msg(if_state_change=True)
+
+    def __allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
+        """
+        # TODO: Review and test this callback
+        Callback for the allocation subscriber
+
+        :param allocation_msg: Allocation message
+        """
+
+        self.get_logger().info(f"{self.id} < Received allocation: \n    Task id: {allocation_msg.task_id}\n    Agent id: {allocation_msg.target_agent_id}\n    Action: {allocation_msg.action}\n    Priority: {allocation_msg.priority}")
+
+        # -> Check if bid is for a task the agent is aware of
+        if allocation_msg.task_id not in self.tasklog.ids:
+            self.get_logger().info(f"!!! WARNING: Received allocation for task {allocation_msg.task_id} not in task log")
+            return
+        # -> Check if bid is for an agent the agent is aware of
+        elif allocation_msg.target_agent_id not in self.fleet.ids_active:
+            self.get_logger().info(f"!!! WARNING: Received allocation for agent {allocation_msg.target_agent_id} not in fleet")
+            return
+
+        # -> Convert allocation action to
+        allocation_state = self.action_to_allocation_state(action=allocation_msg.action)
+
+        # -> Action is not None
+        if allocation_state is not None:
+            # -> Merge received allocation into current allocation
+            self.shared_allocations_a, self.shared_allocations_priority_alpha = self.priority_merge(
+                # Logging
+                task_id=allocation_msg.task_id,
+                agent_id=allocation_msg.target_agent_id,
+
+                # Merging
+                matrix_updated_ij=self.shared_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+                matrix_source_ij=allocation_state,
+                priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
+                priority_source_ij=allocation_msg.priority,
+
+                #greater_than_zero_condition=False,
+
+                # Reset
+                currently_assigned=None,
+                reset=False     # TODO: REVIEW (was True before refactor..?)
+            )
+
+            # -> Update allocation
+            self.update_allocation()
+
+            # -> If state has changed, update local states (only publish when necessary)
+            self.publish_allocation_state_msg(if_state_change=True)
 
     # ---------------- Processes
     def update_situation_awareness(self,
@@ -334,5 +433,130 @@ class ICBAgent(MAAFAgent):
 
         :param reset_assignment: Flag to reset the current assignment
         :param agent: Agent object
+        """
+        raise NotImplementedError
+
+    def reset_allocation(self, reset_assignment: bool = False) -> None:
+        """
+        Reset the allocation state of the agent. This is a placeholder method that can be overridden by subclasses.
+
+        :param reset_assignment: Flag to reset the current assignment
+        """
+
+        if self.agent.plan.current_task_id is not None:
+            # -> Drop current task
+            self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
+            self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
+
+        # -> Update allocation
+        self.update_allocation(reset_assignment=reset_assignment)  # TODO: Review reset_assignment for efficiency
+
+        # -> Publish allocation state if state has changed
+        self.publish_allocation_state_msg(if_state_change=True)
+
+    # ---------------- tools
+    def priority_merge(self,
+                       # Logging
+                       task_id: str,
+                       agent_id: str,
+
+                       # Merging
+                       matrix_updated_ij: float,
+                       priority_updated_ij: float,
+
+                       matrix_source_ij: float,
+                       priority_source_ij: float,
+
+                       # Reset
+                       currently_assigned: Optional[bool] = None,
+                       reset: bool = False
+                       ):
+        """
+        Merge two matrices values based on priority values. If source priority is higher, update the updated matrix value with the
+        source matrix. If updated priority is higher, do nothing. If priorities are equal, apply other tie-breakers.
+
+        Option to reset task value to zero if source priority is higher. If using reset, the tasks_value_x_ij must be
+        provided.
+
+        ### For logging purposes
+        :param task_id: Task id
+        :param agent_id: Agent id
+
+        ### Merging variables
+        :param matrix_updated_ij: Updated matrix value
+        :param matrix_source_ij: Source matrix value to compare with updated matrix value
+        :param priority_updated_ij: Updated priority value
+        :param priority_source_ij: Source priority value used to compare source matrix value with updated priority value
+
+        ### Reset variables
+        :param currently_assigned: Flag to check if the task is currently assigned
+        :param reset: Flag to reset task value to zero if source priority is higher
+
+        :return: Updated task value, updated matrix value, updated priority value
+        """
+
+        # -> If source priority is higher
+        if priority_source_ij > priority_updated_ij:
+
+            # -> Update matrix value with source matrix value
+            matrix_updated_ij = matrix_source_ij
+
+            # -> Update priority value with source priority value
+            priority_updated_ij = priority_source_ij
+
+            # -> Reset task value to zero to remove allocation
+            if reset and currently_assigned:
+                # -> Cancel goal
+                self._drop_task(
+                    task_id=task_id,
+                    reset=True,    # This reset is not for task drop, but for y (hence True)
+                    traceback="Priority merge reset",
+                    logger=True
+                )
+
+            # elif reset and agent_id == self.agent.id:   # TODO: REVIEW THEORY OF THIS CHANGE
+            #     # -> Cancel goal
+            #     self._drop_task(
+            #         task_id=self.agent.plan.current_task_id,
+            #         reset=False,    # This reset is not for task drop, but for y (hence False)
+            #         traceback="Priority merge reset",
+            #         logger=True
+            #     )
+
+        # -> If updated priority is higher
+        elif priority_source_ij < priority_updated_ij:
+            # -> Do nothing as updated priority is higher, therefore keep updated matrix value and priority value
+            pass
+
+        # -> If priorities are equal
+        else:
+            # Apply other tie-breakers
+            # TODO: Implement tie-breakers, for now larger value is kept
+            matrix_updated_ij = max(matrix_updated_ij, matrix_source_ij)
+            # matrix_updated_ij = matrix_source_ij
+
+        return matrix_updated_ij, priority_updated_ij
+
+    @abstractmethod
+    def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
+        """
+        Bid for a task
+
+        :param task: Task object
+        :param agent_lst: List of agents to compute bids for
+
+        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def _drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool, *args, **kwargs):
+        """
+        Drop a task from the task list x or y. If reset is True, the task is removed from the task list x, otherwise it is removed from the task list y.
+
+        :param task_id: Task id
+        :param reset: Flag to reset task value to zero if source priority is higher
+        :param traceback: Reason for dropping the task
+        :param logger: Flag to log the task drop
         """
         raise NotImplementedError

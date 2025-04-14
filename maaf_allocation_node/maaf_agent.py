@@ -106,22 +106,13 @@ NO_ACTION = None
 
 
 class MAAFAgent(Node):
-    def __init__(self,
-                 node_name: str,
-                 id: str = None,
-                 name: str = None,
-                 skillset: List[str] = None,
-                 visibility_range: float = None,
-                 bid_estimator=None
-                 ):
+    def __init__(self, node_name: str):
         """
         maaf agent class
         """
 
         # ----------------------------------- Node Configuration
-        super().__init__(
-            node_name=node_name
-        )
+        super().__init__(node_name=node_name)
 
         logger = SLogger()
         logger.logger = self.get_logger()
@@ -129,11 +120,7 @@ class MAAFAgent(Node):
         # ---- Agent properties
         # > declare all parameters at once
         self.declare_parameters(namespace="", parameters=[("id", "")])
-
-        if id is None:
-            self.id = self.get_parameter("id").get_parameter_value().string_value
-        else:
-            self.id = id
+        self.id = self.get_parameter("id").get_parameter_value().string_value
 
         # -> Check that id is not None
         if self.id == "":
@@ -160,14 +147,15 @@ class MAAFAgent(Node):
         # self.tasklog.add_on_edit_list_listener()
 
         # ---- Node connections
-        self.__setup_node_pubs_subs()
+        self.__setup_node_base_pubs_subs()
+        self._setup_node_additional_pubs_subs()
 
         # ---- Allocation states
         self.__setup_allocation_base_states()
+        self._setup_allocation_additional_states()
 
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = None
-        # TODO: ALWAYS SET IN PARENT CLASS ONCE AGAIN
 
     # ============================================================== INIT
 
@@ -218,7 +206,7 @@ class MAAFAgent(Node):
         # -> Create task log object
         self.tasklog = TaskLog()
 
-    def __setup_node_pubs_subs(self) -> None:
+    def __setup_node_base_pubs_subs(self) -> None:
         """
         Setup node publishers and subscribers
         Separated from __init__ for readability
@@ -276,22 +264,6 @@ class MAAFAgent(Node):
             qos_profile=qos_pose
         )
 
-        # ---------- bids
-        self.bid_sub = self.create_subscription(
-            msg_type=Bid,
-            topic=topic_bids,
-            callback=self.__bid_subscriber_callback,
-            qos_profile=qos_intercession
-        )
-
-        # ---------- allocation
-        self.allocation_sub = self.create_subscription(
-            msg_type=Allocation,
-            topic=topic_allocations,
-            callback=self.__allocation_subscriber_callback,
-            qos_profile=qos_intercession
-        )
-
         # ----------------------------------- Publishers
         # ---------- fleet_msgs
         self.fleet_msgs_pub = self.create_publisher(
@@ -314,6 +286,14 @@ class MAAFAgent(Node):
         #     timer_period_sec=0.1,
         #     callback=self.fleet_msg_update_timer_callback
         # )
+
+    def _setup_node_additional_pubs_subs(self) -> None:
+        """
+        Setup additional node publishers and subscribers
+        Optional method to be implemented in child classes
+        !!! Called automatically by the parent class constructor, does not need to be called manually !!!
+        """
+        pass
 
     def __setup_allocation_base_states(self) -> None:
         """
@@ -424,6 +404,7 @@ class MAAFAgent(Node):
         """
         Setup additional method-dependent allocation states for the agents
         Optional method to be implemented in child classes
+        !!! Called automatically by the parent class constructor, does not need to be called manually !!!
         """
         pass
 
@@ -754,25 +735,6 @@ class MAAFAgent(Node):
 
             self.get_logger().info(f"         < Received environment update")
 
-            # # -> Display the graph
-            # nx.draw(self.environment.graph, pos=self.environment.pos2D)
-            # plt.show()
-
-            # -> Reset allocation states
-            self.reset_allocation_states()  # TODO: Review for efficiency
-
-            # -> Recompute local bids for all tasks
-            for task in self.tasklog.tasks_pending:
-                task_bids = self._bid(task, [self.agent])
-
-                # -> Store bids to local bids matrix
-                for bid in task_bids:
-                    # > Bid
-                    self.local_bids_c.loc[task.id, bid["agent_id"]] = bid["bid"]
-
-                    # > Allocation
-                    self.local_allocations_d.loc[task.id, bid["agent_id"]] = bid["allocation"]
-
             # TODO: Remove, only for testing
             # -> Select a random node in the environment and set as agent position
             random_node = random.choice(list(self.environment.graph.nodes()))
@@ -782,77 +744,11 @@ class MAAFAgent(Node):
             self.agent.state.z = random_node_pos[2]
             self.get_logger().info(f">>>>>>>>>>>>>>>>>>>>> {self.agent.state}")
 
+            # -> Display the graph
+            self.environment.plot_env(fleet=self.fleet)
+
         # -> Call environment update listeners
         self.call_on_env_update_listeners(environment=self.environment)
-
-    def __compute_shortest_paths(self):
-        # -> Retrieve path from scenario ID
-        # TODO: Change to generic path
-        shortest_paths_path = f"/home/vguillet/ros2_ws/src/rlb_simple_sim/rlb_simple_sim/Parsed_maps/{self.scenario.scenario_id.split('_')[1]}_{self.scenario.scenario_id.split('_')[2]}_shortest_paths.json"
-
-        # -> If path exists, parse it
-        if os.path.exists(shortest_paths_path):
-            print(f"Loading shortest paths from file: {shortest_paths_path}")
-
-            with open(shortest_paths_path, "r") as f:
-                all_pairs_shortest_paths = loads(f.read())
-                self.environment["all_pairs_shortest_paths"] = {eval(k): {eval(k2): v2 for k2, v2 in v.items()} for k, v in all_pairs_shortest_paths.items()}
-
-                self.get_logger().info(f"         > {self}: Loaded shortest paths from file")
-
-        else:
-            self.get_logger().info(f"         > {self}: Computing all shortest paths...")
-            # self.environment["all_pairs_shortest_paths"] = dict(nx.all_pairs_shortest_path(self.environment["graph"]))
-
-            # -> Compute the shortest path from all nodes to all nodes
-            # TODO: H-CBBA - Integrate environment graph in the algorithm
-
-            # -> List all task nodes from scenario
-            task_node_locs = [[goto_task["instructions"]["x"], goto_task["instructions"]["y"]] for goto_task in self.scenario.goto_tasks]
-
-            # -> Compute all shortest paths from all nodes to all task nodes
-            matching_nodes = [node for node, position in self.environment["pos"].items() if position in task_node_locs]
-
-            print(f"Matching: {len(matching_nodes)}/{len(self.scenario.goto_tasks)}:", matching_nodes)
-            print("Computing all shortest paths from all nodes to all task nodes...")
-            self.environment["all_pairs_shortest_paths"] = {}
-
-            for i, task_node_loc in enumerate(task_node_locs):
-                print(f"> Computing shortest paths - {i+1}/{len(task_node_locs)}")
-
-                # > Find node corresponding to task
-                task_node = [node for node, position in self.environment["pos"].items() if position == task_node_loc][0]
-
-                # > Find paths from node to all other nodes
-                paths = dict(nx.single_source_shortest_path(G=self.environment["graph"], source=task_node))
-
-                # > Add paths from each node to the task node
-                for source_node, path in paths.items():
-                    # > Invert path
-                    path.reverse()
-
-                    # > Record path from source to task node
-                    if source_node not in self.environment["all_pairs_shortest_paths"].keys():
-                        self.environment["all_pairs_shortest_paths"][source_node] = {}
-
-                    self.environment["all_pairs_shortest_paths"][source_node][task_node] = path
-
-            self.get_logger().info(f"         > {self}: Done computing all shortest paths")
-
-            # # -> Cache results to file
-            # with open(shortest_paths_path, "w") as f:
-            #     all_pairs_shortest_paths = {str(k): {str(k2): v2 for k2, v2 in v.items()} for k, v in self.environment["all_pairs_shortest_paths"].items()}
-            #     f.write(dumps(all_pairs_shortest_paths))
-            #
-            #     print(f"Saved shortest paths to file: {self.scenario.scenario_id}")
-
-            # # TODO: Clean up, added to load from file for type compatibility
-            # with open(shortest_paths_path, "r") as f:
-            #     all_pairs_shortest_paths = loads(f.read())
-            # self.environment["all_pairs_shortest_paths"] = {eval(k): {eval(k2): v2 for k2, v2 in v.items()} for
-            #                                                 k, v in all_pairs_shortest_paths.items()}
-
-            self.get_logger().info(f"         > {self}: Loaded shortest paths from file")
 
     def __pose_subscriber_callback(self, pose_msg) -> None:
         """
@@ -890,97 +786,6 @@ class MAAFAgent(Node):
         """
         # -> Publish allocation state to the fleet
         self.publish_allocation_state_msg()
-
-    def __bid_subscriber_callback(self, bid_msg: Bid) -> None:
-        """
-        Callback for the bid subscriber
-
-        :param bid_msg: Bid message
-        """
-
-        self.get_logger().info(f"{self.id} < Received bid: \n    Task id: {bid_msg.task_id}\n    Agent id: {bid_msg.target_agent_id}\n    Value: {bid_msg.value}\n    Priority: {bid_msg.priority}")
-
-        # -> Check if bid is for a task the agent is aware of
-        if bid_msg.task_id not in self.tasklog.ids:
-            self.get_logger().info(f"!!! WARNING: Received bid for task {bid_msg.task_id} not in task log")
-            return
-        # -> Check if bid is for an agent the agent is aware of
-        elif bid_msg.target_agent_id not in self.fleet.ids_active:
-            self.get_logger().info(f"!!! WARNING: Received bid for agent {bid_msg.target_agent_id} not in fleet")
-            return
-
-        # -> Priority merge received bid into current bids b
-        self.shared_bids_b, self.shared_bids_priority_beta = self.priority_merge(
-                                # Logging
-                                task_id=bid_msg.task_id,
-                                agent_id=bid_msg.target_agent_id,
-
-                                # Merging
-                                matrix_updated_ij=self.shared_bids_b.loc[bid_msg.task_id, bid_msg.target_agent_id],
-                                matrix_source_ij=bid_msg.value,
-                                priority_updated_ij=self.shared_bids_priority_beta.loc[bid_msg.task_id, bid_msg.target_agent_id],
-                                priority_source_ij=bid_msg.priority,
-
-                                greater_than_zero_condition=True,
-
-                                # Reset
-                                currently_assigned=None,
-                                reset=False     # TODO: REVIEW (was True before refactor..?)
-                                )
-
-        # -> Update allocation
-        self.update_allocation()
-
-        # -> If state has changed, update local states (only publish when necessary)
-        self.publish_allocation_state_msg(if_state_change=True)
-
-    def __allocation_subscriber_callback(self, allocation_msg: Allocation) -> None:
-        """
-        Callback for the allocation subscriber
-
-        :param allocation_msg: Allocation message
-        """
-
-        self.get_logger().info(f"{self.id} < Received allocation: \n    Task id: {allocation_msg.task_id}\n    Agent id: {allocation_msg.target_agent_id}\n    Action: {allocation_msg.action}\n    Priority: {allocation_msg.priority}")
-
-        # -> Check if bid is for a task the agent is aware of
-        if allocation_msg.task_id not in self.tasklog.ids:
-            self.get_logger().info(f"!!! WARNING: Received allocation for task {allocation_msg.task_id} not in task log")
-            return
-        # -> Check if bid is for an agent the agent is aware of
-        elif allocation_msg.target_agent_id not in self.fleet.ids_active:
-            self.get_logger().info(f"!!! WARNING: Received allocation for agent {allocation_msg.target_agent_id} not in fleet")
-            return
-
-        # -> Convert allocation action to
-        allocation_state = self.action_to_allocation_state(action=allocation_msg.action)
-
-        # -> Action is not None
-        if allocation_state is not None:
-            # -> Merge received allocation into current allocation
-            self.shared_allocations_a, self.shared_allocations_priority_alpha = self.priority_merge(
-                # Logging
-                task_id=allocation_msg.task_id,
-                agent_id=allocation_msg.target_agent_id,
-
-                # Merging
-                matrix_updated_ij=self.shared_allocations_a.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-                matrix_source_ij=allocation_state,
-                priority_updated_ij=self.shared_allocations_priority_alpha.loc[allocation_msg.task_id, allocation_msg.target_agent_id],
-                priority_source_ij=allocation_msg.priority,
-
-                greater_than_zero_condition=False,
-
-                # Reset
-                currently_assigned=None,
-                reset=False     # TODO: REVIEW (was True before refactor..?)
-            )
-
-            # -> Update allocation
-            self.update_allocation()
-
-            # -> If state has changed, update local states (only publish when necessary)
-            self.publish_allocation_state_msg(if_state_change=True)
 
     @abstractmethod
     def _task_msg_subscriber_callback(self, task_msg):
@@ -1270,215 +1075,3 @@ class MAAFAgent(Node):
                 deserialised_state[key] = pd.DataFrame(value) if isinstance(value, dict) else pd.Series(value)
 
         return deserialised_state
-
-    def update_path(self,
-                    source_node: str,
-                    target_node: str,
-                    ) -> None:
-        """
-        Update path to a task for an agent
-
-        :param source: Source node
-        :param source_pos: Source node position
-        :param target: Target node
-        :param target_pos: Target node position
-        """
-
-        # -> If agent on a node in the path for the current bid, reuse and trim the path
-        current_path = self.tasklog.get_path(
-            source=source_node,
-            target=target_node,
-            requirement=None,  # TODO: Fix once path requirements have been implemented
-            selection="shortest"
-        )
-
-        if current_path:
-            current_path = current_path["path"]
-
-            if source_node == self.agent.id and source_node in current_path:
-                path = current_path[current_path.index((self.agent.state.x, self.agent.state.y)):]
-                compute_path = False
-
-            else:
-                compute_path = True
-        else:
-            compute_path = True
-
-        if compute_path:
-            # -> Get nodes position
-            # > Source node
-            if source_node in self.fleet:
-                source_node_loc = (self.fleet[source_node].state.x, self.fleet[source_node].state.y)  # TODO: SET AS AGENT NODE
-            else:
-                source_node_loc = (self.tasklog[source_node].instructions["x"], self.tasklog[source_node].instructions["y"])
-
-            # > Target node
-            if target_node in self.fleet:
-                target_node_loc = (self.fleet[target_node].state.x, self.fleet[target_node].state.y)
-            else:
-                target_node_loc = (self.tasklog[target_node].instructions["x"], self.tasklog[target_node].instructions["y"])
-
-            # -> Find the weigthed Manhattan distance between the agent and the task
-            path = self.environment["all_pairs_shortest_paths"][source_node_loc][target_node_loc]
-            # path = nx.shortest_path(environment["graph"], agent_node, task_node)
-            # path = nx.astar_path(environment["graph"], agent_node, task_node, weight="weight")
-
-        # > Store path to agent task log
-        self.tasklog.add_path(
-            source_node=source_node,
-            target_node=target_node,
-            path={
-                "id": f"{self.agent.id}",
-                "path": path,
-                "requirements": ["ground"]  # TODO: Fix once path requirements have been implemented
-            },
-            two_way=False,
-            selection="latest"
-        )
-
-        # current_path = self.tasklog.get_path(
-        #     source=source,
-        #     target=target,
-        #     requirement=None,
-        #     selection="shortest"
-        # )
-        #
-        # if current_path:
-        #     current_path = current_path["path"]
-        #
-        #     if source_pos in current_path:
-        #         path = current_path[current_path.index(source_pos):]
-        #         compute_path = False
-        #
-        #     else:
-        #         compute_path = True
-        # else:
-        #     compute_path = True
-        #
-        # if compute_path:
-        #     # -> Find the Manhattan distance between the agent and the task
-        #     path = self.environment["all_pairs_shortest_paths"][source_pos][target_pos]
-        #     # path = nx.shortest_path(self.environment["graph"], source_pos, target_pos)
-        #     # path = nx.astar_path(environment["graph"], source_pos, target_pos, weight="weight")
-        #
-        # # > Store path to agent task log
-        # self.tasklog.add_path(
-        #     source_node=source,
-        #     target_node=target,
-        #     path={
-        #         "id": f"{self.id}:{source}_{target}",
-        #         "path": path,
-        #         "requirements": ["ground"]
-        #     },
-        #     two_way=False,
-        #     selection="latest"
-        # )
-
-    def priority_merge(self,
-                       # Logging
-                       task_id: str,
-                       agent_id: str,
-
-                       # Merging
-                       matrix_updated_ij: float,
-                       priority_updated_ij: float,
-
-                       matrix_source_ij: float,
-                       priority_source_ij: float,
-
-                       # Reset
-                       currently_assigned: Optional[bool] = None,
-                       reset: bool = False
-                       ):
-        """
-        Merge two matrices values based on priority values. If source priority is higher, update the updated matrix value with the
-        source matrix. If updated priority is higher, do nothing. If priorities are equal, apply other tie-breakers.
-
-        Option to reset task value to zero if source priority is higher. If using reset, the tasks_value_x_ij must be
-        provided.
-
-        ### For logging purposes
-        :param task_id: Task id
-        :param agent_id: Agent id
-
-        ### Merging variables
-        :param matrix_updated_ij: Updated matrix value
-        :param matrix_source_ij: Source matrix value to compare with updated matrix value
-        :param priority_updated_ij: Updated priority value
-        :param priority_source_ij: Source priority value used to compare source matrix value with updated priority value
-
-        :param greater_than_zero_condition: Condition to check if the source matrix value is greater than zero
-
-        ### Reset variables
-        :param currently_assigned: Flag to check if the task is currently assigned
-        :param reset: Flag to reset task value to zero if source priority is higher
-
-        :return: Updated task value, updated matrix value, updated priority value
-        """
-
-        # -> If source priority is higher
-        if priority_source_ij > priority_updated_ij:
-
-            # -> Update matrix value with source matrix value
-            matrix_updated_ij = matrix_source_ij
-
-            # -> Update priority value with source priority value
-            priority_updated_ij = priority_source_ij
-
-            # -> Reset task value to zero to remove allocation
-            if reset and currently_assigned:
-                # -> Cancel goal
-                self._drop_task(
-                    task_id=task_id,
-                    reset=True,    # This reset is not for task drop, but for y (hence True)
-                    traceback="Priority merge reset",
-                    logger=True
-                )
-
-            # elif reset and agent_id == self.agent.id:   # TODO: REVIEW THEORY OF THIS CHANGE
-            #     # -> Cancel goal
-            #     self._drop_task(
-            #         task_id=self.agent.plan.current_task_id,
-            #         reset=False,    # This reset is not for task drop, but for y (hence False)
-            #         traceback="Priority merge reset",
-            #         logger=True
-            #     )
-
-        # -> If updated priority is higher
-        elif priority_source_ij < priority_updated_ij:
-            # -> Do nothing as updated priority is higher, therefore keep updated matrix value and priority value
-            pass
-
-        # -> If priorities are equal
-        else:
-            # Apply other tie-breakers
-            # TODO: Implement tie-breakers, for now larger value is kept
-            matrix_updated_ij = max(matrix_updated_ij, matrix_source_ij)
-            # matrix_updated_ij = matrix_source_ij
-
-        return matrix_updated_ij, priority_updated_ij
-
-    # >>>> Node specific
-    @abstractmethod
-    def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
-        """
-        Bid for a task
-
-        :param task: Task object
-        :param agent_lst: List of agents to compute bids for
-
-        :return: Bid(s) list, with target agent id and corresponding bid and allocation action values
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def _drop_task(self, task_id: str, reset: bool, traceback: str, logger: bool, *args, **kwargs):
-        """
-        Drop a task from the task list x or y. If reset is True, the task is removed from the task list x, otherwise it is removed from the task list y.
-
-        :param task_id: Task id
-        :param reset: Flag to reset task value to zero if source priority is higher
-        :param traceback: Reason for dropping the task
-        :param logger: Flag to log the task drop
-        """
-        raise NotImplementedError

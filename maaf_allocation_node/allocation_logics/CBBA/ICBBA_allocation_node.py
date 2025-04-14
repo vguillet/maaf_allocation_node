@@ -65,15 +65,9 @@ DEEP = 2
 class ICBBANode(ICBAgent):
     def __init__(self):
         # ---- Init parent class
-        super().__init__(
-            node_name="ICBBA_node",
-            skillset=None
-        )
+        super().__init__(node_class="ICBBA_node")
 
         # ----------------------------------- Agent allocation states
-        # -> Setup additional CBAA-specific allocation states
-        self._setup_allocation_additional_states()
-
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = deepcopy(self.allocation_state_hash_dict)
 
@@ -87,6 +81,7 @@ class ICBBANode(ICBAgent):
     def _setup_allocation_additional_states(self) -> None:
         """
         Setup additional method-dependent allocation states for the agents
+        !!! Called automatically by the parent class constructor
         """
         # ---- Local state
         """
@@ -518,54 +513,9 @@ class ICBBANode(ICBAgent):
         :param last_update_s: Task last update matrix s received from the fleet
         """
 
-        # TODO: Cleanup once base and interceding agents are separate
-
-        # if reset_assignment and self.agent.plan.current_task_id is not None:
-        #     self._drop_task(task_id=self.agent.plan.current_task_id, reset=True, forward=True)
-        #     self.get_logger().info(f"Agent {self.id}: Resetting current task assignment")
-
-        # # -------------------------------- Interceding agent logic
-        # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-        #     # -> Compute new bids
-        #     for task in self.tasklog.tasks_pending:
-        #         self._bid(task=task, agent_lst=self.fleet.agents_active)
-        #
-        #     # -> Update b
-        #     for task in self.tasklog.tasks_pending:
-        #         for agent in self.fleet.agents_active:
-        #             # > Determine correct matrix values
-        #             if self.local_bids_c.loc[task.id, agent.id] > 0:
-        #                 shared_bids_b_ij_updated, shared_bids_priority_beta_ij_updated = self.priority_merge(
-        #                     # Logging
-        #                     task_id=task.id,
-        #                     agent_id=agent.id,
-        #
-        #                     # Merging
-        #                     matrix_updated_ij=self.shared_bids_b.loc[task.id, agent.id],
-        #                     matrix_source_ij=self.local_bids_c.loc[task.id, agent.id],
-        #                     priority_updated_ij=self.shared_bids_priority_beta.loc[task.id, agent.id],
-        #                     priority_source_ij=self.hierarchy_level,
-        #
-        #                     # Reset
-        #                     currently_assigned=None,
-        #                     reset=False
-        #                 )
-        #
-        #                 # > Update local states
-        #                 self.shared_bids_b.loc[task.id, agent.id] = shared_bids_b_ij_updated
-        #                 self.shared_bids_priority_beta.loc[task.id, agent.id] = shared_bids_priority_beta_ij_updated
-
         # ---- Merge local states with shared states
         # -> If own states have changed, update local states (optimisation to avoid unnecessary updates)
         if self.allocation_state_change:
-            # # TODO: Cleanup once interceding agents are not the same as base agents
-            # interceding_agent = False
-            # if self.bid_evaluation_function is interceding_skill_based_bid_amplifier:
-            #     interceding_agent = True
-            #     self.bid_evaluation_function = graph_weighted_manhattan_distance_bundle_bid
-            #     self.agent.hierarchy_level = 0
-            #     self.hierarchy_level = 0
-
             while len(self.agent.plan) < len(self.tasklog.tasks_pending):
                 # -> Calculate bids
                 # > List tasks not in plan
@@ -607,7 +557,7 @@ class ICBBANode(ICBAgent):
                                     goal_name=task.type
                                 ) for role in agent_roles):
                                 filtered_agent_lst.append(agent)
-                                
+
                         agent_lst = filtered_agent_lst
                         self.get_logger().info(f"Valid agents after filtering by role: {agent_lst}")
 
@@ -758,12 +708,6 @@ class ICBBANode(ICBAgent):
                 # -> If there are no valid tasks, break the while loop
                 else:
                     break
-
-            # # TODO: Cleanup once interceding agents are not the same as base agents
-            # if interceding_agent:
-            #     self.bid_evaluation_function = interceding_skill_based_bid_amplifier
-            #     self.agent.hierarchy_level = 1
-            #     self.hierarchy_level = 1
 
         # ---- Update local states
         if agent is not None and last_update_s is not None:
