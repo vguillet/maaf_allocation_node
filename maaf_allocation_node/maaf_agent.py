@@ -2,20 +2,8 @@
 ##################################################################################################################
 
 """
-Parent class for the CAF framework. To use, the following must be defined in the child class:
-MAF:
-    Optional:
-    - on_set_state
-
-CAF:
-    - message_to_publish(self) (property)
-    - process_msg(self, msg)
-    - next_state(self) (property)
-    # - action_to_take(self) (property)
-    # - process_step(self, obs, reward, done, infos)
-
-    Optional:
-    - on_new_task(self, task_id, task_data)
+Core class of the MAAF framework. Contains all the basic components, interfaces, and methods for an agent to operate
+in a MAAF coordination network. Must be inherited by all agents in the network.
 """
 
 # Built-in/Generic Imports
@@ -99,20 +87,15 @@ except ModuleNotFoundError as e:
 
 ##################################################################################################################
 
-FREE_ALLOCATION = 0
-BLACKLISTED = -1
-IMPOSED_ALLOCATION = 1
-NO_ACTION = None
-
 
 class MAAFAgent(Node):
-    def __init__(self, node_name: str):
+    def __init__(self, node_class: str):
         """
         maaf agent class
         """
 
         # ----------------------------------- Node Configuration
-        super().__init__(node_name=node_name)
+        super().__init__(node_name=node_class)
 
         logger = SLogger()
         logger.logger = self.get_logger()
@@ -150,15 +133,10 @@ class MAAFAgent(Node):
         self.__setup_node_base_pubs_subs()
         self._setup_node_additional_pubs_subs()
 
-        # ---- Allocation states
-        self.__setup_allocation_base_states()
-        self._setup_allocation_additional_states()
-
         # -> Initialise previous state hash
         self.prev_allocation_state_hash_dict = None
 
     # ============================================================== INIT
-
     def __setup_fleet_and_tasklog(self) -> None:
         # ---- Fleet data
         """
@@ -295,119 +273,6 @@ class MAAFAgent(Node):
         """
         pass
 
-    def __setup_allocation_base_states(self) -> None:
-        """
-        Setup allocation states for the agents
-        """
-        # ---- Local states
-        """
-        Local bids matrix c of size N_t x N_u: 
-        > value c_ijr is bid agent i makes for task j, for for agent r
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.local_bids_c = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active,
-        )
-
-        self.local_bids_c = self.local_bids_c.astype(float)
-
-        # > Include in self agent shared state
-        self.agent.shared["local_bids_c"] = self.local_bids_c
-
-        """
-        Local allocations matrix d of size N_t x N_u:
-        - 0: do nothing
-        - 1: reset (remove allocation or blacklisting)
-        - 2: blacklist (ban allocation)
-        - 3: allocate (impose allocation)
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.local_allocations_d = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active,
-        )
-
-        # ---- Shared states
-        """
-        Winning bids list y of size N_t: 
-        > most up to date estimation of current highest bid for each task across all agents in fleet
-
-        List is a pandas dataframe of size N_t, initialized as zero dataframe, with task ids as index
-        """
-
-        self.winning_bids_y = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, 1)),
-            index=self.tasklog.ids_pending,
-            columns=["winning_bids_y"]
-        )
-
-        self.winning_bids_y = self.winning_bids_y.astype(float)
-
-        """
-        Shared bids matrix b of size N_t x N_u: 
-        > highest priority/value bids made across the fleet for each task and each agent
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.shared_bids_b = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active,
-        )
-
-        self.shared_bids_b = self.shared_bids_b.astype(float)
-
-        """
-        Shared bids priority matrix beta of size N_t x N_u:
-        > priority value corresponding to each bid in shared_bids_bi
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.shared_bids_priority_beta = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active
-        )
-
-        """
-        Shared allocations matrix a of size N_t x N_u:
-        - -1: blacklisted
-        - 0: not allocated (free allocation)
-        - 1: allocated (imposed allocation)
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.shared_allocations_a = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active
-        )
-
-        """
-        Shared allocations priority matrix alpha of size N_t x N_u:
-        > priority value corresponding to each allocation in shared_allocations_ai
-
-        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
-        """
-        self.shared_allocations_priority_alpha = pd.DataFrame(
-            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
-            index=self.tasklog.ids_pending,
-            columns=self.fleet.ids_active
-        )
-
-    def _setup_allocation_additional_states(self) -> None:
-        """
-        Setup additional method-dependent allocation states for the agents
-        Optional method to be implemented in child classes
-        !!! Called automatically by the parent class constructor, does not need to be called manually !!!
-        """
-        pass
-
     def reset_allocation_states(self) -> None:
         """
         Reset allocation states for the agents
@@ -521,7 +386,6 @@ class MAAFAgent(Node):
         """
         return len(self.fleet.ids_active)
 
-    # ============================================================== PROPERTIES
     # ---------------- Self state
     # >>>> State change tracking
     @property
@@ -630,7 +494,7 @@ class MAAFAgent(Node):
 
                 state = {**state, **serialised_state}
 
-        if local_allocation_state:
+        if local_allocation_state and self.local_allocation_state is not None:
             if not serialised:
                 state = {**state, **self.local_allocation_state}
             else:
@@ -644,7 +508,7 @@ class MAAFAgent(Node):
 
                 state = {**state, **serialised_state}
 
-        if shared_allocation_state:
+        if shared_allocation_state and self.shared_allocation_state is not None:
             if not serialised:
                 state = {**state, **self.shared_allocation_state}
             else:
@@ -673,6 +537,16 @@ class MAAFAgent(Node):
         }
 
     @property
+    def local_allocation_state(self) -> dict or None:
+        """
+        Local allocation state at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
+
+        :return: dict
+        """
+        return None
+
+    @property
     def shared_allocation_state(self):
         """
         Shared allocation state at current time step (not serialised)
@@ -680,36 +554,7 @@ class MAAFAgent(Node):
 
         :return: dict
         """
-        return {
-            "winning_bids_y": self.winning_bids_y,
-            "shared_bids_b": self.shared_bids_b,
-            "shared_bids_priority_beta": self.shared_bids_priority_beta,
-            "shared_allocations_a": self.shared_allocations_a,
-            "shared_allocations_priority_alpha": self.shared_allocations_priority_alpha,
-            **self.additional_shared_states
-        }
-
-    @property
-    def additional_shared_states(self) -> dict:
-        """
-        OPTIONAL
-        Additional (algo specific) shared states at current time step (not serialised)
-        !!!! All entries must be dataframes !!!!
-
-        :return: dict
-        """
-        return {}
-
-    @property
-    @abstractmethod
-    def local_allocation_state(self) -> dict:
-        """
-        Local allocation state at current time step (not serialised)
-        !!!! All entries must be dataframes !!!!
-
-        :return: dict
-        """
-        pass
+        return None
 
     # ============================================================== METHODS
     # ---------------- Callbacks
@@ -805,44 +650,9 @@ class MAAFAgent(Node):
         """
         pass
 
-    # >>>> Node specific
-    @abstractmethod
-    def update_situation_awareness(self,
-                                   tasklog: Optional[TaskLog],
-                                   fleet: Optional[Fleet]
-                                   ) -> Tuple[bool, bool]:
-        """
-        Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
-        local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
-        they are no longer in the task list or fleet.
-
-        :param tasklog: Task log to merge
-        :param fleet: Fleet to merge
-
-        :return: Tuple of bools (task_state_change, fleet_state_change)
-        """
-        raise NotImplementedError
-
-    @abstractmethod
-    def update_shared_states(self,
-                             received_shared_bids_b,
-                             received_shared_bids_priority_beta,
-                             received_shared_allocations_a,
-                             received_shared_allocations_priority_alpha
-                             ):
-        """
-        Update local states with received states from the fleet
-
-        :param received_shared_bids_b: Task bids matrix b received from the fleet
-        :param received_shared_bids_priority_beta: Task bids priority matrix beta received from the fleet
-        :param received_shared_allocations_a: Task allocations matrix a received from the fleet
-        :param received_shared_allocations_priority_alpha: Task allocations priority matrix alpha received from the fleet
-        """
-        raise NotImplementedError
-
     # ---------------- Processes
     # >>>> Base
-    def handle_message(self, msg) -> bool:
+    def check_if_handle_message(self, msg) -> bool:
         """
         Check if the message should be handled by the agent or ignored
         Ignore if:
@@ -1002,26 +812,77 @@ class MAAFAgent(Node):
 
         # self.get_logger().info(f"         > Published goal msg: {meta_action} task {task_id}")
 
+    def update_situation_awareness(self,
+                                   tasklog: Optional[TaskLog],
+                                   fleet: Optional[Fleet]
+                                   ) -> Tuple[bool, bool]:
+        """
+        Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
+        local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
+        they are no longer in the task list or fleet.
+
+        :param tasklog: Task log to merge
+        :param fleet: Fleet to merge
+
+        :return: Tuple of bools (task_state_change, fleet_state_change)
+        """
+
+        # ---- Merge received fleet into local one
+        fleet_state_change = self.fleet.merge(
+            fleet=fleet,
+            add_agent_callback=self.add_agent,
+            remove_agent_callback=self.remove_agent,
+            fleet_state_change_callback=None,
+            prioritise_local=False,
+            logger=self.get_logger(),
+        )
+
+        # ---- Merge received task list into local one
+        task_state_change = self.tasklog.merge(
+            tasklog=tasklog,
+            add_task_callback=self.add_task,
+            terminate_task_callback=self.terminate_task,
+            tasklog_state_change_callback=None,
+            prioritise_local=False,
+            logger=self.get_logger()
+        )
+
+        return task_state_change, fleet_state_change
+
+    def add_agent(self, agent: Agent) -> None:
+        """
+        Method called when a new agent is added to the fleet. To use, simply override this method in the child class.
+
+        :param agent: Agent to add
+        """
+        pass
+
+    def remove_agent(self, agent: Agent) -> None:
+        """
+        Method called when an agent is removed from the fleet. To use, simply override this method in the child class.
+
+        :param agent: Agent to remove
+        """
+        pass
+
+    def terminate_task(self, task: Task) -> None:
+        """
+        Method called when a task is terminated. To use, simply override this method in the child class.
+
+        :param task: Task to terminate
+        """
+        pass
+
+    def add_task(self, task: Task) -> None:
+        """
+        Method called when a new task is added to the task log. To use, simply override this method in the child class.
+
+        :param task: Task to add
+        """
+        pass
+
     # >>>> Node specific
     # ---------------- tools
-    @staticmethod
-    def action_to_allocation_state(action: int) -> Optional[int]:
-        """
-        Convert action to allocation state
-
-        :param action: Action to convert
-        :return: int
-        """
-
-        if action == 1:
-            return FREE_ALLOCATION
-        elif action == 2:
-            return BLACKLISTED
-        elif action == 3:
-            return IMPOSED_ALLOCATION
-        else:
-            return NO_ACTION
-
     def rebroadcast(self, msg, publisher) -> tuple:
         """
         Conditional rebroadcast of a message based on the trace

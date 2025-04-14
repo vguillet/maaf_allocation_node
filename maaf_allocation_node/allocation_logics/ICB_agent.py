@@ -2,7 +2,9 @@
 ##################################################################################################################
 
 """
-This module contains the MAAF allocation node class, which is a ROS2 node that implements the CBAA algorithm for task allocation.
+This module contains the ICBAgent allocation node class. It is a child class of the MAAFAgent class and implements the
+basic components of consensus-based allocation algorithms. It must be extended by the child classes to implement
+the specific allocation algorithm.
 """
 
 # Built-in/Generic Imports
@@ -45,22 +47,31 @@ except ModuleNotFoundError:
 
 ##################################################################################################################
 
+FREE_ALLOCATION = 0
+BLACKLISTED = -1
+IMPOSED_ALLOCATION = 1
+NO_ACTION = None
+
 
 class ICBAgent(MAAFAgent):
     def __init__(self, node_class: str):
         # ---- Init parent class
         super().__init__(node_class=node_class)
 
+        # ---- Allocation states
+        self.__setup_allocation_base_states()
+        self._setup_allocation_additional_states()
+
         # ---------- Recompute
         reset_assignment = True
 
         # -> Recompute bids on environment change
         if True:    # TODO: Add parameter to enable/disable this in config
-            self.add_on_env_update_listener(lambda: self.update_allocation(reset_assignment=reset_assignment))
+            self.add_on_env_update_listener(lambda *args, **kwargs: self.update_allocation(reset_assignment=reset_assignment))
 
         # -> Recompute bids on state change
         if self.organisation.allocation_specification.get_property(agent_id=self.id, property_name="recompute_bids_on_state_change"):
-            self.add_on_pose_update_listener(lambda: self.update_allocation(reset_assignment=reset_assignment))
+            self.add_on_pose_update_listener(lambda *args, **kwargs: self.update_allocation(reset_assignment=reset_assignment))
 
     # ============================================================== INIT
     def _setup_node_additional_pubs_subs(self) -> None:
@@ -86,7 +97,159 @@ class ICBAgent(MAAFAgent):
             qos_profile=qos_intercession
         )
 
+    def __setup_allocation_base_states(self) -> None:
+        """
+        Setup allocation states for the agents
+        """
+        # ---- Local states
+        """
+        Local bids matrix c of size N_t x N_u: 
+        > value c_ijr is bid agent i makes for task j, for for agent r
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.local_bids_c = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active,
+        )
+
+        self.local_bids_c = self.local_bids_c.astype(float)
+
+        # > Include in self agent shared state
+        self.agent.shared["local_bids_c"] = self.local_bids_c
+
+        """
+        Local allocations matrix d of size N_t x N_u:
+        - 0: do nothing
+        - 1: reset (remove allocation or blacklisting)
+        - 2: blacklist (ban allocation)
+        - 3: allocate (impose allocation)
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.local_allocations_d = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active,
+        )
+
+        # ---- Shared states
+        """
+        Winning bids list y of size N_t: 
+        > most up to date estimation of current highest bid for each task across all agents in fleet
+
+        List is a pandas dataframe of size N_t, initialized as zero dataframe, with task ids as index
+        """
+
+        self.winning_bids_y = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, 1)),
+            index=self.tasklog.ids_pending,
+            columns=["winning_bids_y"]
+        )
+
+        self.winning_bids_y = self.winning_bids_y.astype(float)
+
+        """
+        Shared bids matrix b of size N_t x N_u: 
+        > highest priority/value bids made across the fleet for each task and each agent
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.shared_bids_b = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active,
+        )
+
+        self.shared_bids_b = self.shared_bids_b.astype(float)
+
+        """
+        Shared bids priority matrix beta of size N_t x N_u:
+        > priority value corresponding to each bid in shared_bids_bi
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.shared_bids_priority_beta = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active
+        )
+
+        """
+        Shared allocations matrix a of size N_t x N_u:
+        - -1: blacklisted
+        - 0: not allocated (free allocation)
+        - 1: allocated (imposed allocation)
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.shared_allocations_a = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active
+        )
+
+        """
+        Shared allocations priority matrix alpha of size N_t x N_u:
+        > priority value corresponding to each allocation in shared_allocations_ai
+
+        Matrix is a pandas dataframe of size N_t x N_u, initialized as zero matrix, with task ids as index and agent ids as columns
+        """
+        self.shared_allocations_priority_alpha = pd.DataFrame(
+            np.zeros((self.Task_count_N_t, self.Agent_count_N_u)),
+            index=self.tasklog.ids_pending,
+            columns=self.fleet.ids_active
+        )
+
+    @abstractmethod
+    def _setup_allocation_additional_states(self) -> None:
+        """
+        Setup additional method-dependent allocation states for the agents
+        Optional method to be implemented in child classes
+        !!! Called automatically by the parent class constructor, does not need to be called manually !!!
+        """
+        raise NotImplementedError
+
     # ============================================================== PROPERTIES
+    @property
+    @abstractmethod
+    def local_allocation_state(self) -> dict:
+        """
+        Local allocation state at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
+
+        :return: dict
+        """
+        pass
+
+    @property
+    def shared_allocation_state(self):
+        """
+        Shared allocation state at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
+
+        :return: dict
+        """
+        return {
+            "winning_bids_y": self.winning_bids_y,
+            "shared_bids_b": self.shared_bids_b,
+            "shared_bids_priority_beta": self.shared_bids_priority_beta,
+            "shared_allocations_a": self.shared_allocations_a,
+            "shared_allocations_priority_alpha": self.shared_allocations_priority_alpha,
+            **self.additional_shared_states
+        }
+
+    @property
+    def additional_shared_states(self) -> dict:
+        """
+        OPTIONAL
+        Additional (algo specific) shared states at current time step (not serialised)
+        !!!! All entries must be dataframes !!!!
+
+        :return: dict
+        """
+        return {}
 
     # ============================================================== METHODS
     # ---------------- Callbacks
@@ -98,7 +261,7 @@ class ICBAgent(MAAFAgent):
         """
 
         # ----- Check if the message should be processed
-        if not self.handle_message(msg=task_msg):
+        if not self.check_if_handle_message(msg=task_msg):
             return
 
         # ----- Unpack msg
@@ -166,7 +329,7 @@ class ICBAgent(MAAFAgent):
         :param team_msg: TeamComm message
         """
         # ----- Check if the message should be processed
-        if not self.handle_message(msg=team_msg):
+        if not self.check_if_handle_message(msg=team_msg):
             return
 
         # ----- Unpack msg
@@ -320,42 +483,6 @@ class ICBAgent(MAAFAgent):
             self.publish_allocation_state_msg(if_state_change=True)
 
     # ---------------- Processes
-    def update_situation_awareness(self,
-                                   tasklog: Optional[TaskLog],
-                                   fleet: Optional[Fleet]
-                                   ) -> Tuple[bool, bool]:
-        """
-        Update local states with new tasks and fleet dicts. Add new tasks and agents to local states and extend
-        local states with new rows and columns for new tasks and agents. Remove tasks and agents from local states if
-        they are no longer in the task list or fleet.
-
-        :param tasklog: Task log to merge
-        :param fleet: Fleet to merge
-
-        :return: Tuple of bools (task_state_change, fleet_state_change)
-        """
-
-        # ---- Merge received fleet into local one
-        fleet_state_change = self.fleet.merge(
-            fleet=fleet,
-            add_agent_callback=self.add_agent,
-            remove_agent_callback=self.remove_agent,
-            fleet_state_change_callback=None,
-            prioritise_local=False,
-            logger=self.get_logger(),
-        )
-
-        # ---- Merge received task list into local one
-        task_state_change = self.tasklog.merge(
-            tasklog=tasklog,
-            add_task_callback=self.add_task,
-            terminate_task_callback=self.terminate_task,
-            tasklog_state_change_callback=None,
-            prioritise_local=False,
-            logger=self.get_logger()
-        )
-
-        return task_state_change, fleet_state_change
 
     @abstractmethod
     def add_agent(self, agent: Agent) -> None:
@@ -536,6 +663,24 @@ class ICBAgent(MAAFAgent):
             # matrix_updated_ij = matrix_source_ij
 
         return matrix_updated_ij, priority_updated_ij
+
+    @staticmethod
+    def action_to_allocation_state(action: int) -> Optional[int]:
+        """
+        Convert action to allocation state
+
+        :param action: Action to convert
+        :return: int
+        """
+
+        if action == 1:
+            return FREE_ALLOCATION
+        elif action == 2:
+            return BLACKLISTED
+        elif action == 3:
+            return IMPOSED_ALLOCATION
+        else:
+            return NO_ACTION
 
     @abstractmethod
     def _bid(self, task: Task, agent_lst: list[Agent]) -> list[dict]:
