@@ -93,6 +93,9 @@ class GraphWeightedManhattanDistanceBundleBid(BiddingLogic):
             }]
         """
 
+        logger.info(f"Task specs: {task.instructions['x'], task.instructions['y']}")
+        logger.info(f"Agent pos: {agent_lst[0].state.x, agent_lst[0].state.y}")
+
         # -> Calculate the weighted Manhattan distance for all valid agents
         bids = []
 

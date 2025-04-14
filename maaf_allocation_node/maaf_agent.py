@@ -89,11 +89,10 @@ except ModuleNotFoundError as e:
 
 
 class MAAFAgent(Node):
-    def __init__(self, node_class: str):
+    def __init__(self, node_class: str, id_override: str = None):
         """
         maaf agent class
         """
-
         # ----------------------------------- Node Configuration
         super().__init__(node_name=node_class)
 
@@ -102,13 +101,16 @@ class MAAFAgent(Node):
 
         # ---- Agent properties
         # > declare all parameters at once
-        self.declare_parameters(namespace="", parameters=[("id", "")])
-        self.id = self.get_parameter("id").get_parameter_value().string_value
+        if id_override is None:
+            self.declare_parameters(namespace="", parameters=[("id", "")])
+            self.id = self.get_parameter("id").get_parameter_value().string_value
 
-        # -> Check that id is not None
-        if self.id == "":
-            raise ValueError("Agent id parameter not set (must be set in a launch file or in the constructor)")
+            # -> Check that id is not None
+            if self.id == "":
+                raise ValueError("Agent id parameter not set (must be set in a launch file or in the constructor)")
 
+        else:
+            self.id = id_override
 
         # ---- Multi-hop behavior
         self.rebroadcast_received_msgs = False
@@ -144,11 +146,67 @@ class MAAFAgent(Node):
         Agents ids are obtained using the self.id_card property
         """
 
-        # -> Load organisation
-        self.organisation = Organisation.load_from_file(
-            filename=organisation_file_path, # TODO: Monte Carlo - Change to ROS parameters
-            partial=False
+        # TODO: Remove once organisation is loaded from file, failsafe for CoHoMa ----------------
+        try:
+            from maaf_tools.datastructures.organisation.MOISEPlus.MoiseModel import MoiseModel
+            from maaf_tools.datastructures.organisation.RoleAllocation import RoleAllocation
+
+        except:
+            from maaf_tools.maaf_tools.datastructures.organisation.MOISEPlus.MoiseModel import MoiseModel
+            from maaf_tools.maaf_tools.datastructures.organisation.RoleAllocation import RoleAllocation
+
+        # -> Load Moise+ model components
+        with open(organisation_folder_path + "/moise_deontic_specification.json", "r") as file:
+            deontic_specification = json.load(file)
+
+        with open(organisation_folder_path + "/moise_functional_specification.json", "r") as file:
+            functional_specification = json.load(file)
+
+        with open(organisation_folder_path + "/moise_structural_specification.json", "r") as file:
+            structural_specification = json.load(file)
+
+        model = MoiseModel(
+            deontic_specification=deontic_specification,
+            functional_specification=functional_specification,
+            structural_specification=structural_specification
         )
+
+        # -> Load team compo json
+        with open(organisation_folder_path + "/fleet_role_allocation.json", "r") as file:
+            role_allocation = json.load(file)
+
+        role_allocation = RoleAllocation(role_allocation=role_allocation)
+
+        # -> Construct fleet
+        # Load agent classes json and fleet agents json
+        with open(organisation_folder_path + "/fleet_agent_classes.json", "r") as file:
+            agent_classes = json.load(file)
+
+        with open(organisation_folder_path + "/fleet_agents.json", "r") as file:
+            fleet_agents = json.load(file)
+
+        # Construct fleet instance
+        fleet = Fleet.from_config_files(
+            fleet_agents=fleet_agents,
+            agent_classes=agent_classes
+        )
+
+        with open(organisation_folder_path + "/fleet_allocation_specification.json", "r") as file:
+            allocation_specification = json.load(file)
+
+        self.organisation = Organisation(
+            fleet=fleet,
+            moise_model=model,
+            role_allocation=role_allocation,
+            allocation_specification=allocation_specification
+        )
+
+        # TODO: Uncomment once organisation is loaded from file, failsafe for CoHoMa ----------------
+        # -> Load organisation
+        # self.organisation = Organisation.load_from_file(
+        #     filename=organisation_file_path, # TODO: Monte Carlo - Change to ROS parameters
+        #     partial=False
+        # )
 
         # -> Extract fleet object
         self.fleet = self.organisation.fleet.clone()
@@ -158,7 +216,8 @@ class MAAFAgent(Node):
 
         # -> Check if self is in the fleet
         if self.id not in self.fleet.ids:
-            raise ValueError(f"Agent {self.id} not in fleet. Please check the organisation file.")
+            raise ValueError(f"Agent {self.id} not in fleet. Please check the organisation file."
+                             f"\n> Fleet contains: {self.fleet.ids}")
 
         # -> Set get_timestamp method
         def get_timestamp():

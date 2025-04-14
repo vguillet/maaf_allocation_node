@@ -320,7 +320,7 @@ class ICBAgent(MAAFAgent):
         # -> If state has changed, update local states (only publish when necessary)
         self.publish_allocation_state_msg(if_state_change=True)
 
-        self.environment.plot_env(fleet=self.fleet, tasklog=self.tasklog)
+        #self.environment.plot_env(fleet=self.fleet, tasklog=self.tasklog)
 
     def _team_msg_subscriber_callback(self, team_msg) -> None:
         """
@@ -352,6 +352,8 @@ class ICBAgent(MAAFAgent):
         # ----- Update shared states
         # > Get received agent
         received_agent = self.fleet[team_msg.source]
+
+        #self.get_logger().info(f"Received states: {received_allocation_state.keys()}")
 
         # > Update the agent in the fleet
         self.update_shared_states(
